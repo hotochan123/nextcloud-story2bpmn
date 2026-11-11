@@ -1,0 +1,24 @@
+# dependencies, restored by `npm ci`
+/node_modules/
+
+# built frontend: `npm run build` writes js/ and css/; a release builds it fresh
+/js/
+/css/
+
+# local copy of https://apps.nextcloud.com/schema/apps/info.xsd for offline checks
+/build/info.xsd
+
+# output of the old demo scripts (dev/legacy)
+out/
+.claude/settings.local.json
+
+# signing material never belongs in the repository
+*.key
+*.csr
+*.crt
+*.pem
+
+# Uebergabe-Archiv, aus uebergabe-opendesign/ erzeugt
+uebergabe-opendesign.zip
+# Umsetzungspaket der Designagentur, ausgepackt nach docs/gestaltung/
+umsetzung-paket.zip

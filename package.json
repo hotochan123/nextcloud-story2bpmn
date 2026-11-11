@@ -1,0 +1,39 @@
+{
+  "name": "story2bpmn",
+  "version": "0.1.0",
+  "description": "Nextcloud app: tell a process as a story, get readable BPMN 2.0",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node node_modules/vite/bin/vite.js --mode production build",
+    "dev": "node node_modules/vite/bin/vite.js --mode development build",
+    "watch": "node node_modules/vite/bin/vite.js --mode development build --watch",
+    "test": "tsx --test 'tests/core/*.test.ts' 'tests/client/*.test.ts'",
+    "legacy:ui": "tsx dev/legacy/server.ts",
+    "legacy:demo": "tsx dev/legacy/demo.ts",
+    "legacy:demo:pdf": "tsx dev/legacy/demo-pdf.ts"
+  },
+  "dependencies": {
+    "@nextcloud/dialogs": "7.5.0",
+    "@nextcloud/files": "4.1.1",
+    "@nextcloud/l10n": "3.4.1",
+    "@nextcloud/router": "3.2.0",
+    "@nextcloud/vue": "9.13.1",
+    "bpmn-moddle": "^10.2.0",
+    "bpmnlint": "^11.13.0",
+    "pdf-lib": "^1.17.1",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@nextcloud/browserslist-config": "3.1.2",
+    "@nextcloud/vite-config": "2.5.4",
+    "@types/node": "^26.5.0",
+    "tsx": "^4.23.13",
+    "typescript": "^6.0.3",
+    "vite": "7.3.7"
+  },
+  "browserslist": [
+    "extends @nextcloud/browserslist-config"
+  ]
+}

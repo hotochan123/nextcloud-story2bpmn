@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bpmnc="urn:bpmn-core:geschichte" id="Definitions_P" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-core" exporterVersion="1" bpmnc:geschichte="[{&#34;zug&#34;:&#34;start&#34;,&#34;text&#34;:&#34;Rechnung geht ein&#34;,&#34;stelle&#34;:&#34;Buchhaltung&#34;,&#34;prozess&#34;:&#34;Rechnungseingang&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Rechnung prüfen&#34;,&#34;stelle&#34;:&#34;Buchhaltung&#34;,&#34;system&#34;:&#34;SAP&#34;,&#34;frist&#34;:&#34;3 Arbeitstage&#34;},{&#34;zug&#34;:&#34;ausnahme&#34;,&#34;text&#34;:&#34;Betrag falsch&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Rückfrage beim Lieferanten&#34;,&#34;stelle&#34;:&#34;Buchhaltung&#34;},{&#34;zug&#34;:&#34;weiter&#34;,&#34;ziel&#34;:&#34;Schritt_2&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Betrag über 5000 €?&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Zahlung freigeben&#34;,&#34;stelle&#34;:&#34;Führungskraft&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Zahlung anweisen&#34;,&#34;stelle&#34;:&#34;Buchhaltung&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Bezahlt&#34;}]">
+  <bpmn:collaboration id="P_collaboration">
+    <bpmn:participant id="P_pool" name="Rechnungseingang" processRef="P" />
+  </bpmn:collaboration>
+  <bpmn:process id="P" name="Rechnungseingang" isExecutable="false">
+    <bpmn:documentation>ES BEGINNT: Rechnung geht ein bei Buchhaltung.
+Buchhaltung soll Rechnung prüfen in SAP, Frist 3 Arbeitstage.
+FALLS Betrag falsch:
+  Buchhaltung soll Rückfrage beim Lieferanten.
+  WEITER BEI Rechnung prüfen.
+WENN Betrag über 5000 €?
+→ ja:
+  Führungskraft soll Zahlung freigeben.
+  ZUSAMMEN.
+SONST → nein:
+  ZUSAMMEN.
+Buchhaltung soll Zahlung anweisen.
+ENDE: Bezahlt.</bpmn:documentation>
+    <bpmn:laneSet id="P_lanes">
+      <bpmn:lane id="Bahn_1" name="Buchhaltung">
+        <bpmn:flowNodeRef>Start_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Zusammen_5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_6</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Zusammen_8</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_9</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_10</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Bahn_2" name="Führungskraft">
+        <bpmn:flowNodeRef>Schritt_7</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_1" name="Rechnung geht ein">
+      <bpmn:outgoing>f_Start_1__Schritt_2</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Schritt_2" name="Rechnung prüfen">
+      <bpmn:documentation>System: SAP
+Frist: 3 Arbeitstage</bpmn:documentation>
+      <bpmn:incoming>f_Zusammen_5__Schritt_2</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_2__Wenn_6</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:boundaryEvent id="Ausnahme_3" name="Betrag falsch" attachedToRef="Schritt_2">
+      <bpmn:outgoing>f_Ausnahme_3__Schritt_4</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="Ausnahme_3_err" />
+    </bpmn:boundaryEvent>
+    <bpmn:task id="Schritt_4" name="Rückfrage beim Lieferanten">
+      <bpmn:incoming>f_Ausnahme_3__Schritt_4</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_4__Zusammen_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Zusammen_5">
+      <bpmn:incoming>f_Start_1__Schritt_2</bpmn:incoming>
+      <bpmn:incoming>f_Schritt_4__Zusammen_5</bpmn:incoming>
+      <bpmn:outgoing>f_Zusammen_5__Schritt_2</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_6" name="Betrag über 5000 €?" default="f_Wenn_6__Zusammen_8">
+      <bpmn:incoming>f_Schritt_2__Wenn_6</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_6__Schritt_7</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_6__Zusammen_8</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Schritt_7" name="Zahlung freigeben">
+      <bpmn:incoming>f_Wenn_6__Schritt_7</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_7__Zusammen_8</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Zusammen_8">
+      <bpmn:incoming>f_Schritt_7__Zusammen_8</bpmn:incoming>
+      <bpmn:incoming>f_Wenn_6__Zusammen_8</bpmn:incoming>
+      <bpmn:outgoing>f_Zusammen_8__Schritt_9</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:task id="Schritt_9" name="Zahlung anweisen">
+      <bpmn:incoming>f_Zusammen_8__Schritt_9</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_9__Ende_10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Ende_10" name="Bezahlt">
+      <bpmn:incoming>f_Schritt_9__Ende_10</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_Start_1__Schritt_2" sourceRef="Start_1" targetRef="Zusammen_5" />
+    <bpmn:sequenceFlow id="f_Ausnahme_3__Schritt_4" sourceRef="Ausnahme_3" targetRef="Schritt_4" />
+    <bpmn:sequenceFlow id="f_Zusammen_5__Schritt_2" sourceRef="Zusammen_5" targetRef="Schritt_2" />
+    <bpmn:sequenceFlow id="f_Schritt_4__Zusammen_5" sourceRef="Schritt_4" targetRef="Zusammen_5" />
+    <bpmn:sequenceFlow id="f_Schritt_2__Wenn_6" sourceRef="Schritt_2" targetRef="Wenn_6" />
+    <bpmn:sequenceFlow id="f_Wenn_6__Schritt_7" name="ja" sourceRef="Wenn_6" targetRef="Schritt_7">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Schritt_7__Zusammen_8" sourceRef="Schritt_7" targetRef="Zusammen_8" />
+    <bpmn:sequenceFlow id="f_Wenn_6__Zusammen_8" name="nein" sourceRef="Wenn_6" targetRef="Zusammen_8" />
+    <bpmn:sequenceFlow id="f_Zusammen_8__Schritt_9" sourceRef="Zusammen_8" targetRef="Schritt_9" />
+    <bpmn:sequenceFlow id="f_Schritt_9__Ende_10" sourceRef="Schritt_9" targetRef="Ende_10" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="P_diagram">
+    <bpmndi:BPMNPlane id="P_plane" bpmnElement="P_collaboration">
+      <bpmndi:BPMNShape id="P_pool_di" bpmnElement="P_pool" isHorizontal="true">
+        <dc:Bounds x="52" y="40" width="1556" height="460" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_1_di" bpmnElement="Bahn_1" isHorizontal="true">
+        <dc:Bounds x="82" y="40" width="1526" height="285" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_2_di" bpmnElement="Bahn_2" isHorizontal="true">
+        <dc:Bounds x="82" y="325" width="1526" height="175" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="142" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_2_di" bpmnElement="Schritt_2">
+        <dc:Bounds x="470" y="80" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ausnahme_3_di" bpmnElement="Ausnahme_3">
+        <dc:Bounds x="567" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_4_di" bpmnElement="Schritt_4">
+        <dc:Bounds x="660" y="190" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Zusammen_5_di" bpmnElement="Zusammen_5" isMarkerVisible="true">
+        <dc:Bounds x="325" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_6_di" bpmnElement="Wenn_6" isMarkerVisible="true">
+        <dc:Bounds x="705" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_7_di" bpmnElement="Schritt_7">
+        <dc:Bounds x="850" y="380" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Zusammen_8_di" bpmnElement="Zusammen_8" isMarkerVisible="true">
+        <dc:Bounds x="1085" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_9_di" bpmnElement="Schritt_9">
+        <dc:Bounds x="1230" y="80" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_10_di" bpmnElement="Ende_10">
+        <dc:Bounds x="1472" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_Start_1__Schritt_2_di" bpmnElement="f_Start_1__Schritt_2">
+        <di:waypoint x="178" y="120" />
+        <di:waypoint x="325" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Ausnahme_3__Schritt_4_di" bpmnElement="f_Ausnahme_3__Schritt_4">
+        <di:waypoint x="585" y="178" />
+        <di:waypoint x="585" y="230" />
+        <di:waypoint x="660" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Zusammen_5__Schritt_2_di" bpmnElement="f_Zusammen_5__Schritt_2">
+        <di:waypoint x="375" y="120" />
+        <di:waypoint x="470" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_4__Zusammen_5_di" bpmnElement="f_Schritt_4__Zusammen_5">
+        <di:waypoint x="730" y="270" />
+        <di:waypoint x="730" y="290" />
+        <di:waypoint x="350" y="290" />
+        <di:waypoint x="350" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_2__Wenn_6_di" bpmnElement="f_Schritt_2__Wenn_6">
+        <di:waypoint x="610" y="120" />
+        <di:waypoint x="705" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Schritt_7_di" bpmnElement="f_Wenn_6__Schritt_7">
+        <di:waypoint x="730" y="145" />
+        <di:waypoint x="730" y="165" />
+        <di:waypoint x="920" y="165" />
+        <di:waypoint x="920" y="380" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_7__Zusammen_8_di" bpmnElement="f_Schritt_7__Zusammen_8">
+        <di:waypoint x="990" y="420" />
+        <di:waypoint x="1110" y="420" />
+        <di:waypoint x="1110" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Zusammen_8_di" bpmnElement="f_Wenn_6__Zusammen_8">
+        <di:waypoint x="755" y="120" />
+        <di:waypoint x="1085" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Zusammen_8__Schritt_9_di" bpmnElement="f_Zusammen_8__Schritt_9">
+        <di:waypoint x="1135" y="120" />
+        <di:waypoint x="1230" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_9__Ende_10_di" bpmnElement="f_Schritt_9__Ende_10">
+        <di:waypoint x="1370" y="120" />
+        <di:waypoint x="1472" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
