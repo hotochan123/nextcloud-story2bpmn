@@ -1,4 +1,4 @@
-import { ProcessIR, Op, Issue, PositionMap, nodeById, incoming, outgoing } from './ir.js';
+import { ProcessIR, Op, Issue, PositionMap, nodeById, incoming, outgoing, levels } from './ir.js';
 import { applyOps } from './apply.js';
 import { validateIR } from './validate.js';
 import { layout } from './layout.js';
@@ -47,10 +47,19 @@ export async function run(input: PipelineInput): Promise<PipelineResult> {
       readingCopy: false
     };
 
-  inferLanes(applied);
+  // Every level on its own: the flow behind a task has its own lanes and its own diagram plane.
+  // Its IDs are prefixed, so all positions share one map.
+  const all = levels(applied);
+  for (const l of all) inferLanes(l);
 
-  const irIssues = validateIR(applied);
+  // A flow behind a task that is not told to its end is an open point (T7): its loose ends are no
+  // check messages of their own - the open point already keeps the reading copy back.
+  // Open points of every level: what can come at any time inside a subprocess has its open point there.
+  const open = new Set(all.flatMap((l) => l.openPoints ?? []).map((p) => p.elementId));
+  const untold = new Set(all.slice(1).filter((l) => open.has(l.id)).flatMap((l) => [l.id, ...l.nodes.map((n) => n.id), ...l.edges.map((e) => e.id)]));
+  const irIssues = all.filter((l) => !untold.has(l.id) || l === applied).flatMap((l) => validateIR(l));
   const positions = layout(applied, input.positions ?? {});
+  for (const l of all.slice(1)) Object.assign(positions, layout(l, input.positions ?? {}));
   if (irIssues.length)
     return {
       ok: false,
@@ -66,7 +75,7 @@ export async function run(input: PipelineInput): Promise<PipelineResult> {
 
   const { xml } = await toBpmn(applied, positions);
 
-  const lintIssues = await lint(await parse(xml));
+  const lintIssues = (await lint(await parse(xml))).filter((i) => !i.elementId || !untold.has(i.elementId));
   if (lintIssues.length)
     return {
       ok: false,

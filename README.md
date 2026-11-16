@@ -26,29 +26,78 @@ in your Nextcloud Files and a readable PDF copy next to it.
 The aim was a tool that everyone finds simple and intuitive to use, and that
 is still deterministic and gives formally correct results. Telling the process
 as a story does both: being close to natural language makes it simple, and
-going step by step makes the result correct. The same story always gives the
+going step by step with defined text blocks makes the result correct. The same
+story always gives the
 same diagram, and the same diagram should always lead back to the same process
 description.
 
 ## Features
 
 - **Tell, don't draw:** the story on the left offers the next possible moves
-  (start, task, decision, whichever comes first, in parallel, wait, exception
-  path, end, continue at an earlier task); the diagram on the right grows with
+  (start, also several equal triggers, task, decision, whichever comes first, in parallel, wait, exception
+  path, end, continue at an earlier task, also within a branch of in parallel, signals: a notice to everyone, awaited
+  or given); a decision, whichever comes first and in parallel can have more
+  than two paths; the diagram on the right grows with
   every move, laid out automatically, with lanes for the roles.
-- **Edit the story:** change any line, insert a move before it, delete it, undo
-  or start over. Or edit the whole story as plain text, checked while you type.
+- **Example process:** "See an example" on the empty start page (on a phone
+  also "Open example" in the ⋯ menu) opens a short invoice approval told to its end,
+  in German or English after the account language; change it and tell it on,
+  it lands in Files only with "Save as".
+- **Subprocesses:** a task can have a flow of its own behind it, told in the
+  same working file on a level of its own (with its own lanes) and drawn as a
+  box with a plus; open it from the line or by double-clicking or tapping the
+  box, breadcrumbs lead back. The reading copy gives each subprocess a page.
+  One level only (except what can come at any time while it runs).
+- **At any time:** tell what can come during the whole flow, whatever step it
+  is at (e.g. the customer cancels), with its own flow; it stops everything or
+  runs alongside. Also inside a subprocess, while it runs: there it stops only
+  the subprocess. Drawn as a BPMN event subprocess, a dotted box.
+- **For each item:** a task (also one with a subprocess) can run once per item,
+  one after another or all at the same time, e.g. "check each invoice item";
+  drawn with the three bars of BPMN multi-instance.
+- **Edit the story:** change any line, insert a step, a wait, a signal, a branch or "in parallel" before it (a branch takes what follows into its first path, the others stay open), give a step an exception or the process another trigger later, delete it,
+  delete a branch keeping one of its paths, delete one path of three or more,
+  give a branch another path later
+  (it stays open until you tell it), reopen a path that merges, continues elsewhere or ends, undo the last change, or begin a new process with New. Or edit the whole story as plain text, checked while you type.
 - **Working files in Files:** new, open, save and save as `.bpmn` with the
   Nextcloud file picker; a click on a `.bpmn` in Files opens it in the app.
   Saving never silently overwrites a file someone changed meanwhile, and a file
-  edited in another BPMN modeler shows a note.
-- **Reading copy:** once the story is complete, "Publish" puts a PDF with the
-  diagram, a legend and the story text next to the working file; PDF and SVG
-  can also be downloaded. Unfinished processes carry a DRAFT mark.
+  edited in another BPMN modeler shows a note. Unsaved changes are kept in the
+  browser, so reloading or closing the tab loses nothing: the next opening offers
+  to restore them.
+- **Diagram area:** the story stays on the left, the diagram fills the rest of
+  the window at a readable zoom and follows the story: choosing a line pans to
+  its shape, tapping a shape chooses its line. Two fingers, a trackpad pinch or
+  Ctrl + wheel zoom only the diagram, around the fingers or the pointer. By keyboard, Tab reaches the diagram: arrows pan, + and − zoom, 0 fits, Enter shows the chosen line. An overview map and standing
+  lane names keep you oriented in long processes; on a tablet held upright the
+  diagram is a band above the story.
+- **Phone view:** below 700 px width or 500 px height one view at a time,
+  story or diagram, switched in a bar at the bottom (a rail at the left edge
+  when held sideways) with Undo and the next move, or Fit and Follow. A tapped
+  line offers "Show in the diagram", a tapped shape "To the line"; after a move
+  the story stays and a point on "Diagram" says it has grown, nothing switches
+  by itself. Moves, the ⋯ of a line and the head actions open as sheets from
+  below, the sidebar and "Edit as text" fill the screen.
+- **Reading copy:** once the story is complete, one click on "Publish" (head
+  of the diagram card) saves any unsaved changes and puts a PDF with the
+  diagram, a legend and the story text next to the working file; if the file
+  was changed elsewhere, the usual warning appears and nothing is published.
+  PDF and SVG (with legend) can be downloaded with the "Download" button next to it as
+  soon as there is a diagram (on a phone from the ⋯ menu; on a subprocess level "Download the whole process" gives the same files); everything but a valid version carries a DRAFT mark. The
+  preview shows no legend.
+- **Approval through Nextcloud:** ask the process owner for approval (Nextcloud
+  names the state as a version and notifies them by a comment); they compare it
+  line by line with the last valid version, with changed shapes framed in the
+  preview, and approve it as "Valid version n": a named file version plus the
+  reading copy without DRAFT. Everyone who can read the file makes proposals on
+  a line as a comment; the process owner accepts or rejects them in the sidebar
+  (proposals, versions, sharing). The state can also show as a tag in Files.
+  When the chosen process owner cannot edit the file yet, the request dialog
+  shares it with them with edit rights in one click (never on its own).
 - **Two diagram languages:** each process is told in German or English
   (questions, signal words, labels); the user interface follows the account
   language (English and German, informal and formal).
-- Works on desktop, laptop and tablet (touch and pen), light and dark theme.
+- Works on desktop, laptop, tablet (touch and pen) and phone, light and dark theme.
 
 ## Requirements
 
@@ -79,7 +128,19 @@ From source, build the frontend first: `npm ci && npm run build`.
   told further.
 - **PDF fonts:** the reading copy uses the PDF standard font Helvetica;
   characters outside the Western European set are replaced.
-- **Not yet:** approval workflow and proposals by other people.
+- **Approval is recognised, not enforced:** anyone who may edit the working
+  file can change it in Files or another modeler; the app then shows "Changed
+  since vN" but cannot prevent it. The app believes an approval only when the
+  file's comments confirm it (a request by another account, then the
+  approver's comment with a check code); otherwise the file counts as a draft.
+  Someone who was once asked for approval by another account can still name
+  themselves process owner in the file. Who may save is decided by Nextcloud's
+  sharing rights; the tag in Files is only a hint.
+- **Size:** a story has at most 500 moves (subprocesses and what can come at
+  any time included), a line of the story text at most 500 characters; larger
+  working files are not opened.
+- **Tags:** showing the state as a tag needs the tag to exist or the right to
+  create tags (on some servers only administrators may).
 
 ## Development
 
@@ -107,9 +168,9 @@ agents:
 - the documentation, including this README, and the translations.
 
 **Tool and models.** The agents run in Anthropic's Claude Code. The private
-development history up to this release has 69 commits (merges not
-counted), from 9 November 2026 to 11 November 2026. Each commit written by an agent carries a
-`Co-Authored-By` trailer naming the model: Claude Opus 5.5 (69 commits). The first 38 commits are the history of the standalone tool bpmn-core that the app grew out of: it was cut down to telling a story (building blocks, a chat input and the AI connection were removed) and gained the marked story text, English as a second language, the event kinds and its workshop design, before it was wrapped into this Nextcloud app.
+development history up to this release has 243 commits (merges not
+counted), from 9 November 2026 to 15 November 2026. Each commit written by an agent carries a
+`Co-Authored-By` trailer naming the model: Claude Opus 5.5 (233 commits). 10 commits without such a trailer came from people by hand (contributions through the public repository). The first 38 commits are the history of the standalone tool bpmn-core that the app grew out of: it was cut down to telling a story (building blocks, a chat input and the AI connection were removed) and gained the marked story text, English as a second language, the event kinds and its workshop design, before it was wrapped into this Nextcloud app.
 
 **How a change is made.** The maintainer decides what goes in, in question
 rounds with an agent. Each change then runs as one job of an automated

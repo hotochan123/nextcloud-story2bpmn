@@ -1,6 +1,6 @@
 {
   "name": "story2bpmn",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Nextcloud app: tell a process as a story, get readable BPMN 2.0",
   "license": "AGPL-3.0-or-later",
   "private": true,

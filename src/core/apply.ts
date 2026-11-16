@@ -306,10 +306,3 @@ function applyOne(ir: ProcessIR, op: Op): Issue | null {
     }
   }
 }
-
-export function terminalNodes(ir: ProcessIR): string[] {
-  return ir.nodes
-    .filter(isFlowNode)
-    .filter((n) => outgoing(ir, n.id).length === 0)
-    .map((n) => n.id);
-}

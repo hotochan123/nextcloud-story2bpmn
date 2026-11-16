@@ -45,7 +45,27 @@ Condition (Conditional) is added last in each case. It is the rarest, and a layp
 
 ## Consequences
 
-- Each stage needs a term in `CONTEXT.md`, a legend entry (`legend()` in `src/core/render.ts`) and a symbol according to the rules in `docs/design-handoff/referenz/uebergabe/BRIEF.md`.
+- Each stage needs a term in `CONTEXT.md`, a legend entry (`legend()` in `src/core/render.ts`) and a symbol according to the rules in `docs/symbols.md`.
 - The layout needs room for boundary events that do not interrupt. BPMN draws them dashed, so the renderer needs a new line style.
 - The IR needs event kinds on start, end and intermediate event. `toBpmn` and `fromBpmn` must write and read the event definitions. Storytelling continues from the moves, but a file without a story should still be read in correctly.
 - In the working file the moves stay backward compatible: a move without `subtype` counts as the simple kind.
+
+## Supplement: at any time (12 Nov 2026)
+
+Decided in the grill of 12 Nov 2026 (`multi-576c5a34`). Something that can come during the whole flow, whatever step it is at ("the customer cancels"), is a BPMN **event subprocess**. Hanging the same exception on every step would quickly become unreadable.
+
+- **One new move, "Something can come at any time"** (`anytime`, stored as `jederzeit`). It is told in a section of its own after the main flow, like a subprocess: `JEDERZEIT mit Nachricht: [Kunde storniert]:`, below it the steps to an end (English `AT ANY TIME with a message: […]:`).
+- **The kinds of the trigger:** message, point in time, condition, signal, the same choice as for the start. The plain kind does not exist here: BPMN wants a trigger on the start of an event subprocess.
+- **"Does the flow continue?"** as with the exceptions: no = everything else stops (interrupting, solid circle), yes = it runs alongside (non-interrupting, dashed circle, `…, Ablauf läuft weiter:`).
+- **Main flow only**, one level: not inside a subprocess or inside another such flow.
+- In the diagram a collapsed box with a dotted frame and its trigger top left, without arrows, below the other shapes of its lane; in the working file a `bpmn:subProcess triggeredByEvent="true"` with its own diagram plane; in the reading copy a page of its own.
+
+## Supplement: two equal triggers (12 Nov 2026)
+
+Decided in the grill of 12 Nov 2026 (`multi-576c5a34`). A process that can begin in more than one way ("an application arrives by mail" or "through the portal") gets one start per way, not one start with an "either - or" behind it.
+
+- **One new move, "It can also start differently"** (`orStart`, stored as `oderStart`), offered only right after the trigger and as often as needed. Each further trigger has its own kind (the same choice as for the start) and its own role.
+- **In the diagram** one start circle per trigger in its lane; they run together in an exclusive merge (diamond without a question) before what comes first. Any of them starts the process.
+- **Only one trigger may begin plainly**: bpmnlint (`single-blank-start-event`) allows one blank start, so the form offers the plain kind only while no trigger begins plainly.
+- **Story text:** `ODER ES BEGINNT mit Nachricht: [Antrag im Portal] bei [@Portal].` (English `OR IT STARTS …`), right below the line of the trigger.
+- Main flow only: a subprocess and the flow of something that can come at any time keep their one fixed start.

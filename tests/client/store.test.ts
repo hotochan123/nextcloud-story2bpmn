@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 // Job 379: what the App Store and the public repository need.
 const info = readFileSync('appinfo/info.xml', 'utf8');
@@ -31,4 +31,30 @@ test('379 AK6 THIRD-PARTY.md names every runtime dependency of package.json', ()
 test('379 AK6 the German store description uses the formal form', () => {
 	const de = info.match(/<description lang="de"><!\[CDATA\[([\s\S]*?)\]\]>/)![1];
 	assert.doesNotMatch(de, /\b(du|dich|dir|dein\w*)\b/i);
+});
+
+/** Job 433: the (name, version, licence) triples of the built `js/*.license` files, without the app itself. */
+export function bundled(texts: string[]): string[] {
+	const rows = new Set<string>();
+	for (const text of texts) {
+		for (const m of text.matchAll(/^- (\S+)\n\t- version: (\S+)\n\t- license: ([^\n]+)$/gm)) {
+			if (m[1] !== 'story2bpmn') rows.add(`| ${m[1]} | ${m[2]} | ${m[3].trim()} |`);
+		}
+	}
+	return [...rows].sort();
+}
+
+const licenseFiles = existsSync('js') ? readdirSync('js').filter((f) => f.endsWith('.license')) : [];
+
+test('433 AK1 THIRD-PARTY.md has a row with version and licence for every package the build bundles', { skip: licenseFiles.length === 0 && 'no js/*.license: run `npm run build` first' }, () => {
+	const lines = new Set(readFileSync('THIRD-PARTY.md', 'utf8').split('\n').map((l) => l.trim()));
+	const rows = bundled(licenseFiles.map((f) => readFileSync(`js/${f}`, 'utf8')));
+	assert.ok(rows.length >= 20, `only ${rows.length} packages found in js/*.license`);
+	assert.deepEqual(rows.filter((r) => !lines.has(r)), []);
+});
+
+test('433 AK1 counter-probe: bundled() reads the plugin format, keeps every version and takes licences literally', () => {
+	const a = '- foo\n\t- version: 1.0.0\n\t- license: MIT\n- story2bpmn\n\t- version: 0.1.0\n\t- license: AGPL-3.0-or-later\n- pako\n\t- version: 1.0.11\n\t- license: (MIT AND Zlib)\n';
+	const b = '- foo\n\t- version: 2.0.0\n\t- license: MIT\n- foo\n\t- version: 1.0.0\n\t- license: MIT\n';
+	assert.deepEqual(bundled([a, b]), ['| foo | 1.0.0 | MIT |', '| foo | 2.0.0 | MIT |', '| pako | 1.0.11 | (MIT AND Zlib) |']);
 });

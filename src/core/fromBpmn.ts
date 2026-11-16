@@ -9,6 +9,7 @@ import {
   PositionMap,
   clone
 } from './ir.js';
+import { readApproval } from './approval.js';
 import { parse, PREAMBLE } from './toBpmn.js';
 import { LANGUAGES } from './language.js';
 
@@ -16,14 +17,17 @@ const KIND: Record<string, Node['kind']> = {
   'bpmn:StartEvent': 'start',
   'bpmn:EndEvent': 'end',
   'bpmn:Task': 'step',
+  'bpmn:SubProcess': 'step',
   'bpmn:BoundaryEvent': 'exception',
   'bpmn:IntermediateCatchEvent': 'wait',
+  'bpmn:IntermediateThrowEvent': 'send',
   'bpmn:ExclusiveGateway': 'gateway',
   'bpmn:ParallelGateway': 'gateway',
   'bpmn:EventBasedGateway': 'gateway'
 };
 
-export type ReadResult = { ir: ProcessIR; positions: PositionMap };
+/** `approvalUnreadable`: the file has an approval state that could not be read (it is left out of `ir`). */
+export type ReadResult = { ir: ProcessIR; positions: PositionMap; approvalUnreadable?: true };
 
 /**
  * Reads a BPMN file back into IR and positions - the reverse direction of
@@ -41,36 +45,11 @@ export async function fromBpmn(xml: string): Promise<ReadResult> {
   const process = (definitions.rootElements ?? []).find((r: any) => r.$type === 'bpmn:Process');
   if (!process) throw new Error('Die Datei enthält keinen bpmn:Process');
 
-  const flowElements: any[] = process.flowElements ?? [];
-  const laneOf = laneAssignment(process);
-
-  const nodes: Node[] = [];
-  const openPoints: OpenPoint[] = [];
-
-  for (const el of flowElements) {
-    const kind = KIND[el.$type];
-    if (!kind) continue;
-
-    const { details, open } = readDocumentation(el);
-    for (const p of open) openPoints.push({ ...p, id: `Offen_${el.id}_${openPoints.length}`, elementId: el.id });
-
-    nodes.push(buildNode(kind, el, laneOf.get(el.id), details));
-  }
+  const { nodes, edges, openPoints } = readFlow(process, 'process');
 
   const processDocs = readDocumentation(process);
   for (const p of processDocs.open)
     openPoints.push({ ...p, id: `Offen_prozess_${openPoints.length}` });
-
-  const edges: Edge[] = flowElements
-    .filter((el: any) => el.$type === 'bpmn:SequenceFlow')
-    .map((f: any) => ({
-      id: f.id,
-      from: f.sourceRef?.id,
-      to: f.targetRef?.id,
-      name: f.name || undefined,
-      condition: f.conditionExpression?.body || undefined,
-      isDefault: f.sourceRef?.default?.id === f.id ? true : undefined
-    }));
 
   const ir: ProcessIR = {
     id: process.id,
@@ -84,11 +63,67 @@ export async function fromBpmn(xml: string): Promise<ReadResult> {
     story: readStory(definitions.$attrs?.['bpmnc:geschichte']),
     description: processDocs.details?.description
   };
+  const approval = readApproval(definitions.$attrs?.['s2b:freigabe']);
+  if (approval.approval) ir.approval = approval.approval;
 
   // clone drops the undefined keys. Otherwise a read-in IR differs
   // from a hand-written one in nothing but empty fields -
   // and every comparison in a test fails for the wrong reason.
-  return { ir: clone(ir), positions: readPositions(definitions, nodes) };
+  const deep = (list: Node[]): Node[] => list.flatMap((n) => [n, ...(n.kind === 'step' && n.subprocess ? deep(n.subprocess.nodes) : [])]);
+  const all = deep(nodes);
+  return { ir: clone(ir), positions: readPositions(definitions, all), ...(approval.unreadable ? { approvalUnreadable: true as const } : {}) };
+}
+
+/**
+ * Nodes and arrows of one container. `level`: 'process'; 'sub', the flow behind a task (a sub-process in the
+ * process); 'inner', the flow of an event sub-process. A sub-process in the process becomes a task with the
+ * flow behind it; in a plain sub-process only an event sub-process is read (what can come at any time while
+ * it runs). Deeper nothing is read - a sub-process there stays a plain task, so a foreign file nested deeply
+ * cannot make reading recurse.
+ */
+function readFlow(container: any, level: 'process' | 'sub' | 'inner'): { nodes: Node[]; edges: Edge[]; openPoints: OpenPoint[] } {
+  const flowElements: any[] = container.flowElements ?? [];
+  const laneOf = laneAssignment(container);
+  const nodes: Node[] = [];
+  const openPoints: OpenPoint[] = [];
+
+  for (const el of flowElements) {
+    const kind = KIND[el.$type];
+    if (!kind) continue;
+
+    const { details, open, each } = readDocumentation(el);
+    for (const p of open) openPoints.push({ ...p, id: `Offen_${el.id}_${openPoints.length}`, elementId: el.id });
+
+    const node = buildNode(kind, el, laneOf.get(el.id), details);
+    // Per item (multi-instance); a standard loop ("while …") is not part of the story and stays out.
+    if (node.kind === 'step' && el.loopCharacteristics?.$type === 'bpmn:MultiInstanceLoopCharacteristics')
+      node.forEach = { item: each ?? '', ...(el.loopCharacteristics.isSequential ? {} : { parallel: true as const }) };
+    const read = level === 'process' || (level === 'sub' && !!el.triggeredByEvent);
+    if (read && el.$type === 'bpmn:SubProcess' && node.kind === 'step') {
+      const inner = readFlow(el, el.triggeredByEvent || level === 'sub' ? 'inner' : 'sub');
+      node.subprocess = { lanes: readLanes(el), nodes: inner.nodes, edges: inner.edges, ...(inner.openPoints.length ? { openPoints: inner.openPoints } : {}) };
+      // An event subprocess: what can come at any time. Its trigger is the kind of its start; a foreign
+      // start without one counts as a message, so the box still has a symbol.
+      if (el.triggeredByEvent) {
+        const start = (el.flowElements ?? []).find((x: any) => x.$type === 'bpmn:StartEvent');
+        const trigger = inner.nodes.find((x) => x.kind === 'start' && x.id === start?.id);
+        node.anytime = { trigger: (trigger?.kind === 'start' && trigger.subtype) || 'message', ...(start?.isInterrupting === false && { keepsRunning: true as const }) };
+      }
+    }
+    nodes.push(node);
+  }
+
+  const edges: Edge[] = flowElements
+    .filter((el: any) => el.$type === 'bpmn:SequenceFlow')
+    .map((f: any) => ({
+      id: f.id,
+      from: f.sourceRef?.id,
+      to: f.targetRef?.id,
+      name: f.name || undefined,
+      condition: f.conditionExpression?.body || undefined,
+      isDefault: f.sourceRef?.default?.id === f.id ? true : undefined
+    }));
+  return { nodes, edges, openPoints };
 }
 
 /** Broken JSON = no story, no crash: the diagram itself is still readable. */
@@ -126,12 +161,17 @@ function buildNode(kind: Node['kind'], el: any, laneId: string | undefined, deta
   if (kind === 'step') return { id: el.id, kind, name, laneId, details };
   if (kind === 'start' || kind === 'wait') {
     const defs: string[] = (el.eventDefinitions ?? []).map((d: any) => d.$type);
-    const subtype = defs.includes('bpmn:MessageEventDefinition') ? 'message' : defs.includes('bpmn:TimerEventDefinition') ? 'time' : defs.includes('bpmn:ConditionalEventDefinition') ? 'condition' : undefined;
+    const subtype = defs.includes('bpmn:MessageEventDefinition') ? 'message' : defs.includes('bpmn:TimerEventDefinition') ? 'time' : defs.includes('bpmn:ConditionalEventDefinition') ? 'condition' : defs.includes('bpmn:SignalEventDefinition') ? 'signal' : undefined;
     return { id: el.id, kind, name, laneId, ...(subtype && { subtype }) };
+  }
+  if (kind === 'send') {
+    // A foreign throw event without a signal (e.g. a message) stays a plain throw event.
+    const defs: string[] = (el.eventDefinitions ?? []).map((d: any) => d.$type);
+    return { id: el.id, kind, name, laneId, ...(defs.includes('bpmn:SignalEventDefinition') && { subtype: 'signal' as const }) };
   }
   if (kind === 'end') {
     const defs: string[] = (el.eventDefinitions ?? []).map((d: any) => d.$type);
-    const subtype = defs.includes('bpmn:TerminateEventDefinition') ? 'cancel' : defs.includes('bpmn:MessageEventDefinition') ? 'message' : undefined;
+    const subtype = defs.includes('bpmn:TerminateEventDefinition') ? 'cancel' : defs.includes('bpmn:MessageEventDefinition') ? 'message' : defs.includes('bpmn:SignalEventDefinition') ? 'signal' : undefined;
     return { id: el.id, kind, name, laneId, ...(subtype && { subtype }) };
   }
   return { id: el.id, kind, name, laneId } as Node;
@@ -157,16 +197,17 @@ function laneAssignment(process: any): Map<string, string> {
  * here. If that ever happens, that is the point where the details
  * belong in own extension attributes instead of the running text.
  */
-export function readDocumentation(el: any): { details?: Details; open: Omit<OpenPoint, 'id'>[] } {
+export function readDocumentation(el: any): { details?: Details; open: Omit<OpenPoint, 'id'>[]; each?: string } {
   const text = (el.documentation ?? []).map((d: any) => d.text ?? '').join('\n');
   const open: Omit<OpenPoint, 'id'>[] = [];
   const description: string[] = [];
   const d: Details = {};
+  let each: string | undefined;
 
   for (const line of text.split('\n')) {
     const openMatch = /^(?:OFFEN|OPEN): (.*?)(?: \((?:angenommen|assumed): (.*)\))?$/.exec(line);
     // Both languages, regardless of which one the file is written in.
-    const after = (k: 'system' | 'documents' | 'deadline') => {
+    const after = (k: 'system' | 'documents' | 'deadline' | 'each') => {
       const v = [PREAMBLE.de[k], PREAMBLE.en[k]].find((x) => line.startsWith(x));
       return v === undefined ? undefined : line.slice(v.length);
     };
@@ -176,11 +217,12 @@ export function readDocumentation(el: any): { details?: Details; open: Omit<Open
     } else if ((w = after('system')) !== undefined) d.system = w;
     else if ((w = after('documents')) !== undefined) d.documents = w.split(', ');
     else if ((w = after('deadline')) !== undefined) d.deadline = w;
+    else if ((w = after('each')) !== undefined) each = w;
     else if (line.length) description.push(line);
   }
 
   if (description.length) d.description = description.join('\n');
-  return { details: Object.keys(d).length ? d : undefined, open };
+  return { details: Object.keys(d).length ? d : undefined, open, ...(each !== undefined && { each }) };
 }
 
 function readPositions(definitions: any, nodes: Node[]): PositionMap {

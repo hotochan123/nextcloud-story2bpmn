@@ -3,8 +3,23 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <template>
-	<div class="text-editor">
-		<p class="label">
+	<div class="text-editor" :class="{ full: phone }">
+		<!-- Phone: full screen, Cancel and Done at the top, the status line right above the keyboard. -->
+		<div v-if="phone" class="editor-head">
+			<button type="button" class="button quiet" data-cancel :class="{ armed }" @click="requestCancel()">
+				{{ cancelText }}
+			</button>
+			<p class="label">
+				{{ t('story2bpmn', 'Story text') }}
+			</p>
+			<button type="button"
+				class="button main"
+				:disabled="busy || !applicable"
+				@click="apply">
+				{{ t('story2bpmn', 'Done') }}
+			</button>
+		</div>
+		<p v-else class="label">
 			{{ t('story2bpmn', 'Story text') }}
 		</p>
 		<div ref="frame" class="editor">
@@ -27,7 +42,7 @@
 					@scroll="hold"
 					@keyup="showCursor"
 					@click="showCursor"
-					@keydown.esc.prevent="$emit('cancel')" />
+					@keydown.esc.prevent="requestCancel()" />
 			</div>
 		</div>
 		<p id="story2bpmn-text-status"
@@ -46,10 +61,11 @@
 				<span>{{ n('story2bpmn', '%n move recognised.', '%n moves recognised.', status.number) }}</span>
 			</template>
 		</p>
+		<p class="t-live" aria-live="polite">{{ armed ? cancelText : '' }}</p>
 		<p id="story2bpmn-text-hint" class="hint">
 			{{ t('story2bpmn', 'One line per move. Signal words in capitals, names in square brackets. Indentation does not matter. Simple steps also work without brackets: “Accounting shall check invoice.”') }}
 		</p>
-		<details class="writingAid" open>
+		<details class="writingAid" :open="!phone">
 			<summary>{{ t('story2bpmn', 'Writing guide') }}</summary>
 			<dl>
 				<template v-for="(m, i) in pattern" :key="i">
@@ -58,15 +74,15 @@
 				</template>
 			</dl>
 		</details>
-		<div class="buttons">
+		<div v-if="!phone" class="buttons">
 			<button type="button"
 				class="button main"
 				:disabled="busy || !applicable"
 				@click="apply">
 				{{ t('story2bpmn', 'Apply') }}
 			</button>
-			<button type="button" class="button quiet" @click="$emit('cancel')">
-				{{ t('story2bpmn', 'Cancel') }}
+			<button type="button" class="button quiet" data-cancel :class="{ armed }" @click="requestCancel()">
+				{{ cancelText }}
 			</button>
 		</div>
 	</div>
@@ -74,10 +90,10 @@
 
 <script>
 import { n, t } from '@nextcloud/l10n'
-import { helpPattern, textChecker, textParts } from '../workbench.ts'
-
-/** Web Worker for the check; without a worker (e.g. forbidden by a policy) the page calculates itself. */
-const newWorker = () => new Worker(new URL('../textChecker.worker.ts', import.meta.url), { type: 'module' })
+import { helpPattern, sameStory, textChecker, textParts } from '../workbench.ts'
+import { cancelStep, textChanged } from '../textDiscard.ts'
+import { createArm } from '../armed.ts'
+import { newWorker } from '../checkerWorker.ts'
 
 export default {
 	name: 'TextEditor',
@@ -85,12 +101,21 @@ export default {
 		/** Story text when opened */
 		start: { type: String, required: true },
 		language: { type: String, required: true },
+		/** The moves when opened: an unchanged "continue at" keeps which of two steps of the same name it leads to. */
+		previous: { type: Array, default: () => [] },
 		busy: { type: Boolean, default: false },
+		/** Phone view: full screen. */
+		phone: { type: Boolean, default: false },
+		/** Text to show instead of `start` (a restored typed text, job 406); it counts as changed. */
+		initial: { type: String, default: null },
 	},
-	emits: ['apply', 'cancel'],
+	// edited: the typed text while it differs from `start`, else null (job 406).
+	emits: ['apply', 'cancel', 'edited'],
 	data() {
 		return {
-			text: this.start,
+			text: this.initial ?? this.start,
+			// "Cancel" clicked once with a changed text: the next press discards it.
+			armed: false,
 			// checked: false until the first check is in; for exactly this text.
 			status: { checked: false, text: null, number: 0, errors: [], line: 0, moves: [] },
 			clock: null,
@@ -100,6 +125,12 @@ export default {
 	computed: {
 		lines() {
 			return this.text.split('\n')
+		},
+		edited() {
+			return textChanged(this.text, this.start)
+		},
+		cancelText() {
+			return this.armed ? t('story2bpmn', 'Really discard?') : t('story2bpmn', 'Cancel')
 		},
 		missingLine() {
 			return this.status.errors.length ? this.status.line : 0
@@ -112,8 +143,9 @@ export default {
 				t('story2bpmn', 'The start'),
 				t('story2bpmn', 'A step; system and deadline optional'),
 				t('story2bpmn', 'Wait for a message, a time or a condition'),
+				t('story2bpmn', 'Wait for a signal or give one (a notice to everyone)'),
 				t('story2bpmn', 'Either – or, with path headings'),
-				t('story2bpmn', 'Two branches side by side'),
+				t('story2bpmn', 'Two or more branches side by side'),
 				t('story2bpmn', 'Exception at the step before'),
 				t('story2bpmn', 'Merge the path or jump back'),
 				t('story2bpmn', 'Continue a postponed path'),
@@ -125,16 +157,41 @@ export default {
 			return this.status.checked && this.status.text === this.text && !this.status.errors.length && this.status.number > 0
 		},
 	},
+	watch: {
+		edited: {
+			handler(v) {
+				if (!v) this.armer?.disarm()
+				this.$emit('edited', v ? this.text : null)
+			},
+			immediate: true,
+		},
+		text(v) {
+			if (this.edited) this.$emit('edited', v)
+		},
+	},
 	created() {
-		this.checker = textChecker(this.language, newWorker)
+		// A plain copy: the worker cannot take a Vue proxy.
+		this.plainPrevious = JSON.parse(JSON.stringify(this.previous))
+		this.checker = textChecker(this.language, newWorker, this.plainPrevious)
+		// The moves of the start text: "Done" with the same story only closes (job 412). Not reactive.
+		this.startMoves = undefined
+		// The armed Cancel button ("Really discard?"); `armed` mirrors it for the template.
+		this.armer = createArm({ onChange: (k) => { this.armed = k } })
 	},
 	mounted() {
+		// Opened with a restored text: the start text is checked once on its own.
+		if (this.initial !== null && this.initial !== this.start) {
+			this.checker.check(this.start).then((r) => {
+				if (!r.errors.length) this.startMoves = r.moves
+			})
+		}
 		this.check()
 		this.$refs.field.focus()
 	},
 	beforeUnmount() {
 		clearTimeout(this.clock)
 		this.checker.end()
+		this.armer.end()
 	},
 	methods: {
 		t,
@@ -158,6 +215,7 @@ export default {
 			else if (above + boxHeight > frame.scrollTop + frame.clientHeight) frame.scrollTop = above + boxHeight - frame.clientHeight + 4
 		},
 		changed() {
+			this.armer.disarm()
 			this.$nextTick(this.showCursor)
 			clearTimeout(this.clock)
 			this.checking = true
@@ -168,10 +226,22 @@ export default {
 			const text = this.text
 			this.checking = true
 			const r = await this.checker.check(text)
+			// Kept even when typed on in the meantime: the first check is the one of the start text.
+			if (text === this.start && !r.errors.length) this.startMoves = r.moves
 			// Typed on in the meantime: this result is outdated.
 			if (text !== this.text) return
 			this.checking = false
 			this.status = { checked: true, text, number: r.number, errors: r.errors, line: r.line ?? 0, moves: r.moves }
+		},
+		/** Esc, "Cancel", "Edit as text": a changed text is only discarded on the second press (job 406). `by`: the outside button pressed ("Edit as text"), it keeps the armed state too. */
+		requestCancel(by = null) {
+			if (cancelStep(this.armed, this.edited) === 'arm') {
+				// Returns to normal after 4 s, at a press elsewhere and at Esc (job 413); the Cancel buttons keep it.
+				this.armer.arm(true, [...this.$el.querySelectorAll('[data-cancel]'), ...(by ? [by] : [])])
+				return
+			}
+			this.armer.disarm()
+			this.$emit('cancel')
 		},
 		/** The moves of the check of exactly this text are taken over (button blocked otherwise). */
 		apply() {
@@ -179,6 +249,9 @@ export default {
 				this.$refs.field.focus()
 				return
 			}
+			this.armer.disarm()
+			// The same story as before: nothing changes, "Done" only closes (job 412).
+			if (sameStory(this.status.moves, this.startMoves, this.plainPrevious)) return this.$emit('cancel')
 			this.$emit('apply', this.status.moves)
 		},
 		/** Error from outside (e.g. rejected by the replay): show it, the editor stays open. */

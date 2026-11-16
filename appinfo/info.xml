@@ -17,9 +17,9 @@ an, was an dieser Stelle möglich ist; deshalb ist das Diagramm in jedem Stand f
 Heraus kommt Dokumentation, kein ausführbarer Prozess: eine BPMN-2.0-Arbeitsdatei in Ihren
 Dateien und ein lesbares Leseexemplar als PDF. Ohne Sprachmodell.
     ]]></description>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <licence>agpl</licence>
-    <author mail="minh.toaster@gmail.com">hotochan123</author>
+    <author homepage="https://github.com/hotochan123">hotochan123</author>
     <namespace>Story2Bpmn</namespace>
     <category>office</category>
     <category>organization</category>

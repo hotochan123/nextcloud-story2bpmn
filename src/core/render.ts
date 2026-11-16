@@ -1,6 +1,6 @@
-import { ProcessIR, Node, PositionMap, Position } from './ir.js';
-import { tx, Language } from './language.js';
-import { sizeOf, laneBands, extent, edgePoints, wrap, TASK_CHARS, pagesCaption, SMALL, SMALL_LINE, extraLines, documents, DOC } from './layout.js';
+import { ProcessIR, Node, PositionMap, Position, SubStep, hasSubprocess, subIR } from './ir.js';
+import { tx, shortDate, Language } from './language.js';
+import { sizeOf, laneBands, extent, edgePoints, wrap, TASK_CHARS, pagesCaption, SMALL, SMALL_LINE, extraLines, documents, DOC, PLUS, CORNER } from './layout.js';
 
 /**
  * Draws the diagram - once as SVG, once as PDF. Both paths go
@@ -15,7 +15,7 @@ import { sizeOf, laneBands, extent, edgePoints, wrap, TASK_CHARS, pagesCaption, 
 const MARGIN = 40;
 
 type Prim =
-  | { t: 'rect'; x: number; y: number; w: number; h: number; r?: number; fill?: string; stroke?: string; sw?: number }
+  | { t: 'rect'; x: number; y: number; w: number; h: number; r?: number; fill?: string; stroke?: string; sw?: number; dash?: number[] }
   /** dash: dashed line (BPMN: non-interrupting). */
   | { t: 'circle'; cx: number; cy: number; r: number; fill?: string; stroke?: string; sw?: number; dash?: number[] }
   /** round: round ends and corners (symbols, arrows). dash: dotted (assignment). */
@@ -29,9 +29,25 @@ export type RenderOptions = {
   here?: string;
   /** Without legend: the reading copy places it itself, at a fixed print size. */
   withoutLegend?: boolean;
+  /** Per node the move (0-based) that created it: the SVG groups each node's shapes with data-move (preview only). */
+  moves?: Record<string, number>;
+  /** Per subprocess step the page of the reading copy that shows its flow ("see page n", PDF only). */
+  seePage?: Record<string, number>;
+  /** The level is the flow behind a task: what can come at any time there stops only that flow (legend). */
+  inSubprocess?: boolean;
 };
 
-export type Scene = { prims: Prim[]; width: number; height: number };
+/** Lane and pool headers in scene coordinates (standing names of the preview). */
+export type Band = { name: string; y: number; h: number };
+export type Scene = {
+  prims: Prim[];
+  width: number;
+  height: number;
+  /** Prims [start, end) that draw one node. */
+  groups: { node: string; start: number; end: number }[];
+  lanes: Band[];
+  pool?: { name: string; x: number; y: number; h: number };
+};
 
 /** Colours and strokes from REGEL. */
 const F = { line: '#262626', text: '#1a1a1a', gray: '#595959', lane: '#f7f7f7', head: '#ebebeb', white: '#ffffff', separator: '#bfbfbf' };
@@ -39,6 +55,8 @@ const S = { normal: 1.5, thick: 3.2, inner: 1.2, flow: 1.25, mark: 1.25, lane: 0
 const STROKES = [4, 3];
 /** Dotted: dot, spacing 3.5, round cap (assignment). */
 const POINTS = [0, 3.5];
+/** Frame of what can come at any time (event subprocess): short strokes, read as dotted. */
+const DOTS = [2, 2.5];
 const FONT = 12.5;
 /** Same as --accent in the UI; the preview replaces the colour via CSS. */
 const HERE = '#1a4d8f';
@@ -64,6 +82,8 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
   // Pool: header 30 wide, with the process name upright inside. Lanes with header 34,
   // every second one slightly grey.
   const bands = laneBands(ir, positions);
+  const lanes: Band[] = [];
+  let pool: Scene['pool'];
   if (bands.length) {
     const above = bands[0].y + dy;
     const boxHeight = bands.reduce((s, b) => s + b.height, 0);
@@ -73,9 +93,11 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
     prims.push({ t: 'rect', x: left, y: above, w: boxWidth, h: boxHeight, fill: F.white, stroke: F.line, sw: S.pool });
     prims.push({ t: 'rect', x: left, y: above, w: 30, h: boxHeight, fill: F.head, stroke: F.line, sw: S.pool });
     prims.push({ t: 'text', x: left + 19, y: above + boxHeight / 2, s: ir.name, size: 12, anchor: 'middle', red: -90, bold: true });
+    pool = { name: ir.name, x: left, y: above, h: boxHeight };
     bands.forEach((band, i) => {
       const x = left + 30;
       const y = band.y + dy;
+      lanes.push({ name: band.lane.name, y, h: band.height });
       prims.push({ t: 'rect', x, y, w: boxWidth - 30, h: band.height, fill: i % 2 ? F.lane : F.white, stroke: F.line, sw: S.lane });
       prims.push({ t: 'rect', x, y, w: 34, h: band.height, fill: F.head, stroke: F.line, sw: S.lane });
       prims.push({ t: 'text', x: x + 21, y: y + band.height / 2, s: band.lane.name, size: 11.5, anchor: 'middle', red: -90, bold: true });
@@ -109,12 +131,14 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
     }
   }
 
+  const groups: Scene['groups'] = [];
   for (const n of ir.nodes) {
     const q = p(n.id);
     if (!q) continue;
+    const start = prims.length;
     const b = pagesCaption(ir, n, positions);
     // If an arrow leaves the wait downwards (return path), the name would lie centred on it.
-    const downward = n.kind === 'wait' && ir.edges.some((e) => edgePoints(ir, e, positions)?.some((pt) => {
+    const downward = (n.kind === 'wait' || n.kind === 'send') && ir.edges.some((e) => edgePoints(ir, e, positions)?.some((pt) => {
       const raw = positions[n.id];
       return Math.abs(pt.x - (raw.x + 18)) < 1 && Math.abs(pt.y - (raw.y + 36)) < 1;
     }));
@@ -123,25 +147,26 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
       const s = sizeOf(n);
       prims.push({ t: 'rect', x: q.x - 7, y: q.y - 7, w: s.w + 14, h: s.h + 14, r: 10, stroke: HERE, sw: 2.5 });
     }
-    prims.push(...nodes(n, q, downward, ir.language));
+    prims.push(...nodes(n, q, downward, ir.language, opts.seePage?.[n.id]));
     for (const d of documents(n, q)) prims.push(...documentName(d.cx, d.above, q.y + sizeOf(n).h, d.lines));
-    // Exception right-aligned next to the circle, question centred above the diamond (box from layout.ts).
+    // Caption of an exception or question where layout.ts found a free place (box and alignment from there).
     if (b)
       b.lines.forEach((z, i) =>
         prims.push({
           t: 'text',
-          x: b.x + dx + (n.kind === 'gateway' ? b.w / 2 : b.w),
+          x: b.x + dx + (b.anchor === 'middle' ? b.w / 2 : b.anchor === 'end' ? b.w : 0),
           y: b.y + dy + (i + 1) * SMALL_LINE - 3,
           s: z,
           size: SMALL,
-          anchor: n.kind === 'gateway' ? 'middle' : 'end'
+          anchor: b.anchor
         })
       );
+    groups.push({ node: n.id, start, end: prims.length });
   }
 
   // Legend below the diagram, only for symbols that occur in it. Row 60.
-  // ponytail: beyond 12 entries simply another row is added; merging families only once that happens.
-  const entries = opts.withoutLegend ? [] : legend(ir);
+  // ponytail: beyond 12 entries another row is added; only the signal family is merged so far (legend()).
+  const entries = opts.withoutLegend ? [] : legend(ir, opts.inSubprocess);
   if (entries.length) {
     // Rulebook: 4 columns. At least 300 per column (90 characters in 2 lines); a narrow
     // draft gets fewer columns instead of shrinking in a wide legend.
@@ -171,10 +196,12 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
       bold: true
     });
 
-  return { prims, width, height };
+  // DRAFT went in before the nodes: their prims moved one on.
+  if (opts.draft) for (const g of groups) { g.start++; g.end++; }
+  return { prims, width, height, groups, lanes, pool };
 }
 
-type Entry = { chars: (x: number, y: number) => Prim[]; word: string; text: string };
+type Entry = { chars: (x: number, y: number) => Prim[]; word: string; text: string; signal?: boolean };
 
 /** Entries in a grid from (left, top): symbol field 44 x 36, term 11.5 bold, text 10.5 grey, row 60. */
 function legendEntries(entries: Entry[], left: number, above: number, sw: number, columns: number): Prim[] {
@@ -207,7 +234,7 @@ function scale(prims: Prim[], k: number, c: Position): Prim[] {
  * as in the diagram. Order by shape family: start, task,
  * diamond, wait/exception, end, lane, arrow.
  */
-function legend(ir: ProcessIR): Entry[] {
+function legend(ir: ProcessIR, inSubprocess = false): Entry[] {
   const t = (de: string, en: string) => tx(ir.language, de, en);
   const has = (f: (n: Node) => boolean) => ir.nodes.some(f);
   // Symbol centred on (x, y), at 75 % (diamond 68 %).
@@ -237,11 +264,50 @@ function legend(ir: ProcessIR): Entry[] {
       word: t('Start, sobald ein Zustand eintritt', 'Start once a condition holds'),
       text: t('Der Ablauf beginnt, sobald etwas zutrifft, z. B. Lager unter Mindestbestand.', 'The process begins once something holds, e.g. stock below minimum.')
     }],
+    [has((n) => n.kind === 'start' && n.subtype === 'signal'), {
+      chars: form({ kind: 'start', subtype: 'signal' }),
+      word: t('Start mit Signal', 'Start with a signal'),
+      text: t('Der Ablauf beginnt, wenn eine Meldung an alle kommt.', 'The process begins when a notice to everyone comes.'),
+      signal: true
+    }],
     [has((n) => n.kind === 'step'), {
       chars: (x, y) => [{ t: 'rect', x: x - 21, y: y - 14, w: 42, h: 28, r: 6, fill: F.white, stroke: F.line, sw: S.normal }],
       word: t('Schritt', 'Step'),
       text: t('Eine Tätigkeit. Die Bahn sagt, wer sie erledigt.', 'An activity. The lane shows who does it.')
     }],
+    [has((n) => n.kind === 'step' && !!n.subprocess && !n.anytime), {
+      chars: (x, y) => [
+        { t: 'rect', x: x - 21, y: y - 14, w: 42, h: 28, r: 6, fill: F.white, stroke: F.line, sw: S.normal },
+        { t: 'rect', x: x - 5, y: y + 2, w: 10, h: 10, fill: F.white, stroke: F.line, sw: S.inner },
+        line({ x, y: y + 4 }, { x, y: y + 10 }),
+        line({ x: x - 3, y: y + 7 }, { x: x + 3, y: y + 7 })
+      ],
+      word: t('Teilablauf', 'Subprocess'),
+      text: t('Ein Schritt mit eigenem Ablauf dahinter, gezeichnet als eigenes Diagramm.', 'A step with a flow of its own behind it, drawn as a diagram of its own.')
+    }],
+    ...([false, true] as const).map((keepsRunning): [boolean, Entry] => [has((n) => n.kind === 'step' && !!n.anytime && !!n.anytime.keepsRunning === keepsRunning), {
+      chars: (x, y) => [
+        { t: 'rect', x: x - 21, y: y - 14, w: 42, h: 28, r: 6, fill: F.white, stroke: F.line, sw: S.normal, dash: DOTS },
+        ...scale(corner(x - 12, y - 5, 'message', keepsRunning), 0.6, { x: x - 12, y: y - 5 })
+      ],
+      word: keepsRunning ? t('Jederzeit möglich, Ablauf läuft weiter', 'At any time, the flow continues')
+        : inSubprocess ? t('Jederzeit möglich, bricht den Teilablauf ab', 'At any time, stops the subprocess') : t('Jederzeit möglich, bricht alles ab', 'At any time, everything stops'),
+      // In a subprocess it can come only while that runs; stopping it, the main flow goes on after its step (job 397).
+      text: inSubprocess
+        ? keepsRunning
+          ? t('Kann kommen, solange der Teilablauf läuft; er läuft daneben weiter.', 'Can come while the subprocess runs; it keeps running alongside.')
+          : t('Kann kommen, solange der Teilablauf läuft; er endet, der Hauptablauf geht nach dem Schritt weiter.', 'Can come while the subprocess runs; it ends, the main flow goes on after the step.')
+        : keepsRunning
+          ? t('Kann während des ganzen Ablaufs kommen; er läuft daneben weiter.', 'Can come during the whole process; it keeps running alongside.')
+          : t('Kann während des ganzen Ablaufs kommen; dann endet alles andere.', 'Can come during the whole process; then everything else ends.')
+    }]),
+    ...([false, true] as const).map((parallel): [boolean, Entry] => [has((n) => n.kind === 'step' && !!n.forEach && !!n.forEach.parallel === parallel), {
+      chars: (x, y) => [{ t: 'rect', x: x - 21, y: y - 14, w: 42, h: 28, r: 6, fill: F.white, stroke: F.line, sw: S.normal }, ...bars(x, y - 1, parallel)],
+      word: parallel ? t('Für jedes Stück, gleichzeitig', 'For each item, at the same time') : t('Für jedes Stück, nacheinander', 'For each item, one after another'),
+      text: parallel
+        ? t('Der Schritt läuft für alle Stücke zugleich, z. B. alle Gutachter.', 'The step runs for all items at once, e.g. all reviewers.')
+        : t('Der Schritt läuft für jedes Stück einmal, eins nach dem anderen.', 'The step runs once for each item, one after another.')
+    }]),
     [has((n) => n.kind === 'gateway' && n.gatewayType === 'exclusive'), {
       chars: diamond({ kind: 'gateway', gatewayType: 'exclusive' }),
       word: t('Entscheidung', 'Decision'),
@@ -271,6 +337,18 @@ function legend(ir: ProcessIR): Entry[] {
       chars: form({ kind: 'wait', subtype: 'condition' }),
       word: t('Warten auf Zustand', 'Wait for a condition'),
       text: t('Es geht erst weiter, wenn etwas zutrifft: z. B. Lager wieder voll.', 'Continues only once something holds: e.g. stock refilled.')
+    }],
+    [has((n) => n.kind === 'wait' && n.subtype === 'signal'), {
+      chars: form({ kind: 'wait', subtype: 'signal' }),
+      word: t('Warten auf Signal', 'Wait for a signal'),
+      text: t('Es geht weiter, wenn eine Meldung an alle kommt.', 'Continues when a notice to everyone comes.'),
+      signal: true
+    }],
+    [has((n) => n.kind === 'send' && n.subtype === 'signal'), {
+      chars: form({ kind: 'send', subtype: 'signal' }),
+      word: t('Signal senden', 'Send a signal'),
+      text: t('Hier geht eine Meldung an alle hinaus, für jeden, der wartet.', 'A notice to everyone goes out here, for anyone who waits.'),
+      signal: true
     }],
     [has((n) => n.kind === 'exception' && n.trigger === 'error'), {
       chars: form({ kind: 'exception', trigger: 'error' }),
@@ -307,6 +385,12 @@ function legend(ir: ProcessIR): Entry[] {
       word: t('Ende mit Nachricht', 'End with a message'),
       text: t('Zum Schluss geht etwas raus: Bescheid, Bestätigung, Antwort.', 'Something is sent at the end: notice, confirmation, reply.')
     }],
+    [has((n) => n.kind === 'end' && n.subtype === 'signal'), {
+      chars: form({ kind: 'end', subtype: 'signal' }),
+      word: t('Ende mit Signal', 'End with a signal'),
+      text: t('Der Ablauf endet und gibt dabei eine Meldung an alle.', 'The process ends and gives a notice to everyone.'),
+      signal: true
+    }],
     [has((n) => n.kind === 'end' && n.subtype === 'cancel'), {
       chars: form({ kind: 'end', subtype: 'cancel' }),
       word: t('Alles abbrechen', 'Stop everything'),
@@ -335,13 +419,33 @@ function legend(ir: ProcessIR): Entry[] {
       text: t('Eine Unterlage, die ein Schritt braucht oder erzeugt. Die gepunktete Linie zeigt, welcher.', 'A document a step needs or produces. The dotted line shows which step.')
     }]
   ];
-  return all.filter(([yes]) => yes).map(([, e]) => e);
+  const entries = all.filter(([yes]) => yes).map(([, e]) => e);
+  // Rulebook: beyond 12 entries the signal family becomes one entry (empty and filled triangle).
+  const signals = entries.filter((e) => e.signal);
+  if (entries.length <= 12 || signals.length < 2) return entries;
+  const family: Entry = {
+    chars: (x, y) => [triangle(x - 9, y), triangle(x + 9, y, true)].map((p) => scale([p], 0.75, { x, y })[0]),
+    word: t('Signal', 'Signal'),
+    text: t('Meldung an alle. Leer: es wird darauf gewartet. Gefüllt: hier wird sie gegeben.', 'Notice to everyone. Empty: it is awaited. Filled: it is given here.')
+  };
+  const at = entries.indexOf(signals[0]);
+  const rest = entries.filter((e) => !e.signal);
+  rest.splice(at, 0, family);
+  return rest;
 }
 
 // --- Symbols in a 16 field, centred on (x, y). filled: filled = trigger. ---
 
 const strokeStyle = { stroke: F.line, sw: S.mark, round: true } as const;
 const line = (a: Position, b: Position, sw: number = S.mark): Prim => ({ t: 'poly', pts: [a, b], closed: false, stroke: F.line, sw, round: true });
+
+/** "For each": three bars in the 14 field at (cx, top), 4 apart, 12 long; lying = one after another, standing = at the same time. */
+function bars(cx: number, top: number, parallel = false): Prim[] {
+  const cy = top + PLUS.size / 2;
+  return [-4, 0, 4].map((d) =>
+    parallel ? line({ x: cx + d, y: cy - 6 }, { x: cx + d, y: cy + 6 }) : line({ x: cx - 6, y: cy + d }, { x: cx + 6, y: cy + d })
+  );
+}
 
 function brief(x: number, y: number, filled = false): Prim[] {
   const l = x - 8;
@@ -363,6 +467,12 @@ function clock(x: number, y: number): Prim[] {
     ...strokes,
     { t: 'poly', pts: [{ x, y: y - r * 0.55 }, { x, y }, { x: x + r * 0.42, y: y + r * 0.25 }], closed: false, ...strokeStyle }
   ];
+}
+
+/** Signal: triangle 16 wide, 14 high, optically 0.5 lower; filled when the signal is given. */
+function triangle(x: number, y: number, filled = false): Prim {
+  const o = y - 7 + 0.5;
+  return { t: 'poly', pts: [{ x, y: o }, { x: x + 8, y: o + 14 }, { x: x - 8, y: o + 14 }], closed: true, fill: filled ? F.line : undefined, ...strokeStyle };
 }
 
 /** Condition: sheet 11 x 14 with lines, without dog-ear. */
@@ -399,19 +509,21 @@ function documentName(cx: number, above: number, origin: number, lines: string[]
   ];
 }
 
-function nodes(n: Node, q: Position, nameRight = false, language?: Language): Prim[] {
+function nodes(n: Node, q: Position, nameRight = false, language?: Language, seePage?: number): Prim[] {
   const s = sizeOf(n);
   const m = { x: q.x + s.w / 2, y: q.y + s.h / 2 };
 
-  if (n.kind === 'start' || n.kind === 'end' || n.kind === 'exception' || n.kind === 'wait') {
+  if (n.kind === 'start' || n.kind === 'end' || n.kind === 'exception' || n.kind === 'wait' || n.kind === 'send') {
     const dash = n.kind === 'exception' && n.keepsRunning ? { dash: STROKES } : {};
     const r = s.w / 2;
     const out: Prim[] = [{ t: 'circle', cx: m.x, cy: m.y, r, fill: F.white, stroke: F.line, sw: n.kind === 'end' ? S.thick : S.normal, ...dash }];
     // Intermediate event (wait, exception): double circle, spacing 3.5.
-    if (n.kind === 'exception' || n.kind === 'wait') out.push({ t: 'circle', cx: m.x, cy: m.y, r: 14.5, stroke: F.line, sw: S.inner, ...dash });
+    if (n.kind === 'exception' || n.kind === 'wait' || n.kind === 'send') out.push({ t: 'circle', cx: m.x, cy: m.y, r: 14.5, stroke: F.line, sw: S.inner, ...dash });
     const subtype = n.kind === 'exception' ? n.trigger : n.subtype;
     if (subtype === 'deadline' || subtype === 'time') out.push(...clock(m.x, m.y));
     if (subtype === 'condition') out.push(...sheet(m.x, m.y));
+    // Empty triangle = waiting for the signal (or starting with it), filled = it is given.
+    if (subtype === 'signal') out.push(triangle(m.x, m.y, n.kind === 'send' || n.kind === 'end'));
     // Empty envelope = something arrives (wait), filled = something goes out (trigger).
     if (subtype === 'message') out.push(...brief(m.x, m.y, n.kind === 'end'));
     if (subtype === 'cancel') out.push({ t: 'circle', cx: m.x, cy: m.y, r: r * 0.55, fill: F.line });
@@ -444,13 +556,40 @@ function nodes(n: Node, q: Position, nameRight = false, language?: Language): Pr
   // Task: text 12.5 centred, line spacing 15, below it grey system and deadline (10.5).
   // Wrapping from layout.ts, where the box height depends on it. Name and extras centred together.
   const z = wrap(n.name, TASK_CHARS);
-  const k = extraLines(n, language);
-  const above = m.y - (z.length * 15 + (k.length ? 4 + k.length * SMALL_LINE : 0)) / 2;
+  const sub = n.kind === 'step' && !!n.subprocess;
+  const each = n.kind === 'step' ? n.forEach : undefined;
+  const k = [...extraLines(n, language), ...(sub && seePage ? [tx(language, `siehe Seite ${seePage}`, `see page ${seePage}`)] : [])];
+  // A subprocess: the text moves up above the plus.
+  const anytime = n.kind === 'step' ? n.anytime : undefined;
+  // What can come at any time: the trigger sits top left, the text moves down below it.
+  const above = m.y - (sub || each ? (PLUS.size + PLUS.edge) / 2 : 0) + (anytime ? CORNER / 2 : 0) - (z.length * 15 + (k.length ? 4 + k.length * SMALL_LINE : 0)) / 2;
+  // Both marks: side by side, 4 apart, together centred; the bars left, the plus right (BPMN order).
+  const px = each && sub ? m.x + (PLUS.size + 4) / 2 : m.x;
+  const plus: Prim[] = sub
+    ? [
+        { t: 'rect', x: px - PLUS.size / 2, y: q.y + s.h - PLUS.edge - PLUS.size, w: PLUS.size, h: PLUS.size, fill: F.white, stroke: F.line, sw: S.inner },
+        line({ x: px, y: q.y + s.h - PLUS.edge - PLUS.size + 3 }, { x: px, y: q.y + s.h - PLUS.edge - 3 }),
+        line({ x: px - PLUS.size / 2 + 3, y: q.y + s.h - PLUS.edge - PLUS.size / 2 }, { x: px + PLUS.size / 2 - 3, y: q.y + s.h - PLUS.edge - PLUS.size / 2 })
+      ]
+    : [];
+  if (each) plus.push(...bars(sub ? m.x - (PLUS.size + 4) / 2 : m.x, q.y + s.h - PLUS.edge - PLUS.size, !!each.parallel));
   return [
-    { t: 'rect', x: q.x, y: q.y, w: s.w, h: s.h, r: 9, fill: F.white, stroke: F.line, sw: S.normal },
+    { t: 'rect', x: q.x, y: q.y, w: s.w, h: s.h, r: 9, fill: F.white, stroke: F.line, sw: S.normal, ...(anytime && { dash: DOTS }) },
+    ...(anytime ? scale(corner(q.x + 15, q.y + 15, anytime.trigger, !!anytime.keepsRunning), 0.75, { x: q.x + 15, y: q.y + 15 }) : []),
     ...z.map((s, i) => ({ t: 'text' as const, x: m.x, y: above + 12 + i * 15, s, size: FONT, anchor: 'middle' as const })),
-    ...k.map((s, i) => ({ t: 'text' as const, x: m.x, y: above + z.length * 15 + 4 + 9.5 + i * SMALL_LINE, s, size: SMALL, anchor: 'middle' as const, fill: F.gray }))
+    ...k.map((s, i) => ({ t: 'text' as const, x: m.x, y: above + z.length * 15 + 4 + 9.5 + i * SMALL_LINE, s, size: SMALL, anchor: 'middle' as const, fill: F.gray })),
+    ...plus
   ];
+}
+
+/** Trigger of what can come at any time: a start circle (r 12) with the symbol of its kind; dashed when the flow keeps running. */
+function corner(x: number, y: number, subtype: string, keepsRunning: boolean): Prim[] {
+  const out: Prim[] = [{ t: 'circle', cx: x, cy: y, r: 12, fill: F.white, stroke: F.line, sw: S.normal, ...(keepsRunning && { dash: STROKES }) }];
+  if (subtype === 'time') out.push(...clock(x, y));
+  else if (subtype === 'condition') out.push(...sheet(x, y));
+  else if (subtype === 'signal') out.push(triangle(x, y));
+  else out.push(...brief(x, y));
+  return out;
 }
 
 /** Filled arrowhead 9 x 7.2. */
@@ -474,13 +613,28 @@ const esc = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export function toSvg(ir: ProcessIR, positions: PositionMap, opts: RenderOptions = {}): string {
-  const { prims, width, height } = scene(ir, positions, opts);
-  const body = prims.map(svgPrim).join('\n  ');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(width)}" height="${Math.round(height)}" viewBox="0 0 ${Math.round(width)} ${Math.round(height)}" font-family="Helvetica, Arial, sans-serif">
+  return preview(ir, positions, opts).svg;
+}
+
+/** SVG plus the lane and pool headers in SVG coordinates (standing names of the preview). */
+export function preview(ir: ProcessIR, positions: PositionMap, opts: RenderOptions = {}): { svg: string; lanes: Band[]; pool?: Scene['pool'] } {
+  const { prims, width, height, groups, lanes, pool } = scene(ir, positions, opts);
+  const parts = prims.map(svgPrim);
+  // Preview: each node's shapes in one group, so story line and shape find each other.
+  if (opts.moves)
+    for (const g of groups) {
+      const m = opts.moves[g.node];
+      if (m === undefined || g.end <= g.start) continue;
+      parts[g.start] = `<g data-move="${m + 1}" data-node="${esc(g.node)}">` + parts[g.start];
+      parts[g.end - 1] += '</g>';
+    }
+  const body = parts.join('\n  ');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(width)}" height="${Math.round(height)}" viewBox="0 0 ${Math.round(width)} ${Math.round(height)}" font-family="Helvetica, Arial, sans-serif">
   <rect width="100%" height="100%" fill="#ffffff"/>
   ${body}
 </svg>
 `;
+  return { svg, lanes, pool };
 }
 
 function svgPrim(p: Prim): string {
@@ -489,7 +643,7 @@ function svgPrim(p: Prim): string {
 
   if (p.t === 'rect')
     // Frame "the story continues here" (preview only): the UI determines the colour.
-    return `<rect x="${round(p.x)}" y="${round(p.y)}" width="${round(p.w)}" height="${round(p.h)}"${p.r ? ` rx="${round(p.r)}"` : ''} ${stroke(p)}${p.stroke === HERE ? ` class="here" style="stroke:var(--accent,${HERE})"` : ''}/>`;
+    return `<rect x="${round(p.x)}" y="${round(p.y)}" width="${round(p.w)}" height="${round(p.h)}"${p.r ? ` rx="${round(p.r)}"` : ''} ${stroke(p)}${p.dash ? ` stroke-dasharray="${p.dash.join(' ')}"` : ''}${p.stroke === HERE ? ` class="here" style="stroke:var(--accent,${HERE})"` : ''}/>`;
   if (p.t === 'circle') return `<circle cx="${round(p.cx)}" cy="${round(p.cy)}" r="${round(p.r)}" ${stroke(p)}${p.dash ? ` stroke-dasharray="${p.dash.join(' ')}"` : ''}/>`;
   if (p.t === 'poly') {
     const pts = p.pts.map((q) => `${round(q.x)},${round(q.y)}`).join(' ');
@@ -511,6 +665,19 @@ function svgPrim(p: Prim): string {
 export type PdfOptions = RenderOptions & {
   /** Story text with markers (`[Schritt]`, `[@Stelle]` ...), two spaces per depth. Otherwise ir.description. */
   told?: string;
+  /** Approval state for header and footer (see ReadingCopyState); without it the old texts. */
+  copy?: ReadingCopyState;
+};
+
+/**
+ * What the head and foot of a reading copy say about its approval. `valid`: this is a valid version
+ * (no DRAFT mark). Otherwise a draft; `lastValid` names the version that applies instead.
+ * Dates are ISO strings; `file` is the name of the working file.
+ */
+export type ReadingCopyState = {
+  valid?: { number: number; date: string; by: string; previous?: { number: number; date: string } };
+  lastValid?: { number: number; date: string };
+  file?: string;
 };
 
 const PAGE = { a4portrait: [595, 842], a4landscape: [842, 595], a3landscape: [1191, 842] } as const;
@@ -563,8 +730,8 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
     const X = (v: number) => ox + v * k;
     const Y = (v: number) => H - (oy + v * k);
     // drawSvgPath flips y itself and also scales the stroke width: path in scene coordinates.
-    const path = (d: string, fill?: string, stroke?: string, sw = 0) =>
-      page.drawSvgPath(d, { x: ox, y: H - oy, scale: k, color: color(fill), borderColor: color(stroke), borderWidth: stroke ? sw : 0 });
+    const path = (d: string, fill?: string, stroke?: string, sw = 0, dash?: number[]) =>
+      page.drawSvgPath(d, { x: ox, y: H - oy, scale: k, color: color(fill), borderColor: color(stroke), borderWidth: stroke ? sw : 0, ...(dash && { borderDashArray: dash.map((v) => v * k) }) });
     for (const p of prims) {
       if (p.t === 'rect') {
         const { x, y, w, h } = p;
@@ -573,7 +740,7 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
           r
             ? `M ${x + r} ${y} H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h - r} A ${r} ${r} 0 0 1 ${x + w - r} ${y + h} H ${x + r} A ${r} ${r} 0 0 1 ${x} ${y + h - r} V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`
             : `M ${x} ${y} H ${x + w} V ${y + h} H ${x} Z`,
-          p.fill, p.stroke, p.sw
+          p.fill, p.stroke, p.sw, p.dash
         );
       } else if (p.t === 'circle')
         page.drawCircle({ x: X(p.cx), y: Y(p.cy), size: p.r * k, color: color(p.fill), borderColor: color(p.stroke), borderWidth: (p.sw ?? 0) * k, borderDashArray: p.dash?.map((d) => d * k) });
@@ -611,33 +778,69 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
   };
 
   // ---------- Diagram: A4 landscape, A3 landscape, too wide for A3 on two A3 pages side by side ----------
+  // First the main flow, then one diagram per subprocess (T4), each with its own legend.
   const RQ = 28;
-  const d = scene(ir, positions, { draft: opts.draft, withoutLegend: true });
   const useA3 = PAGE.a3landscape[0] - 2 * RQ;
-  // ponytail: even two pages only reach ~4050 wide; beyond that it gets smaller than 0.56. Three pages only once that happens.
-  const diagPages = d.width * MIN_SCALE > useA3 ? 2 : 1;
-  const [w1, h1] = diagPages === 1 && d.width * MIN_SCALE <= PAGE.a4landscape[0] - 2 * RQ ? PAGE.a4landscape : PAGE.a3landscape;
-  const use = w1 - 2 * RQ;
-  const entries = legend(ir);
   const LK = 0.9;
-  const legHeight = entries.length ? 26 + 30 + Math.ceil(entries.length / 4) * 60 * LK : 0;
   const y0 = RQ + 80;
-  // Width determines the scale; a very tall diagram is additionally shrunk so that the legend fits below it.
-  const m = Math.min(1, (diagPages * use) / d.width, (h1 - RQ - 24 - y0 - legHeight) / d.height);
-  for (let i = 0; i < diagPages; i++) {
-    const s = doc.addPage([w1, h1]);
-    // Each page shows its strip; what lies beside it is cut off by the frame.
-    s.pushOperators(pushGraphicsState(), rectangle(RQ, 0, use, h1), clip(), endPath());
-    paint(s, d.prims, RQ - (i * use), y0, m);
-    s.pushOperators(popGraphicsState());
-    // Legend on every diagram page: each half should be readable on its own.
-    if (entries.length) {
-      const ly = y0 + d.height * m + 26;
-      strokeStyle(s, RQ, ly, w1 - RQ, ly);
-      write(s, t('Legende', 'Legend'), RQ, ly + 18, 10, { bold: true });
-      paint(s, legendEntries(entries, 0, 0, use / 4 / LK, 4), RQ, ly + 30, LK);
+  /** owner: the level the parent box lies in (the main flow, or a subprocess for what can come at any time in it). */
+  type Diagram = { level: ProcessIR; d: Scene; pages: number; parent?: SubStep; owner?: ProcessIR };
+  // ponytail: even two pages only reach ~4050 wide; beyond that it gets smaller than 0.56. Three pages only once that happens.
+  const plan = (level: ProcessIR, extra: RenderOptions = {}): Diagram => {
+    const d = scene(level, positions, { draft: opts.draft, withoutLegend: true, ...extra });
+    return { level, d, pages: d.width * MIN_SCALE > useA3 ? 2 : 1 };
+  };
+  const inSub = (n: SubStep) => (n.anytime ? {} : { inSubprocess: true });
+  // Each flow behind a box, followed by the flows inside it (what can come at any time in a subprocess, job 397).
+  const below = (owner: ProcessIR): Diagram[] => owner.nodes.filter(hasSubprocess).flatMap((n) => {
+    const level = subIR(owner, n);
+    return [{ ...plan(level, inSub(n)), parent: n, owner }, ...below(level)];
+  });
+  const subs = below(ir);
+  // The box of a subprocess names the page of its flow (only in the PDF).
+  const seePage: Record<string, number> = {};
+  let first = plan(ir);
+  let at = first.pages;
+  for (const s of subs) {
+    seePage[s.parent!.id] = at + 1;
+    at += s.pages;
+  }
+  if (subs.length) first = plan(ir, { seePage });
+  for (const [j, s] of subs.entries())
+    if (s.level.nodes.some((n) => n.id in seePage)) subs[j] = { ...s, ...plan(s.level, { ...inSub(s.parent!), seePage }) };
+  /** Per diagram page: which diagram, which part of it, and on which page of the main flow a subprocess box lies. */
+  const sheets: { dg: Diagram; part: number }[] = [];
+  const boxPage: Record<string, number> = {};
+  for (const dg of [first, ...subs]) {
+    const { d, pages, level } = dg;
+    const [w1, h1] = pages === 1 && d.width * MIN_SCALE <= PAGE.a4landscape[0] - 2 * RQ ? PAGE.a4landscape : PAGE.a3landscape;
+    const use = w1 - 2 * RQ;
+    const entries = legend(level, !!dg.parent && !dg.parent.anytime);
+    const startPage = sheets.length;
+    const legHeight = entries.length ? 26 + 30 + Math.ceil(entries.length / 4) * 60 * LK : 0;
+    // Width determines the scale; a very tall diagram is additionally shrunk so that the legend fits below it.
+    const m = Math.min(1, (pages * use) / d.width, (h1 - RQ - 24 - y0 - legHeight) / d.height);
+    for (const g of d.groups.filter((x) => x.node in seePage)) {
+      const box = d.prims[g.start];
+      boxPage[g.node] = startPage + (box?.t === 'rect' ? Math.min(pages, Math.floor((box.x * m) / use) + 1) : 1);
+    }
+    for (let i = 0; i < pages; i++) {
+      const s = doc.addPage([w1, h1]);
+      sheets.push({ dg, part: i });
+      // Each page shows its strip; what lies beside it is cut off by the frame.
+      s.pushOperators(pushGraphicsState(), rectangle(RQ, 0, use, h1), clip(), endPath());
+      paint(s, d.prims, RQ - (i * use), y0, m);
+      s.pushOperators(popGraphicsState());
+      // Legend on every diagram page: each half should be readable on its own.
+      if (entries.length) {
+        const ly = y0 + d.height * m + 26;
+        strokeStyle(s, RQ, ly, w1 - RQ, ly);
+        write(s, t('Legende', 'Legend'), RQ, ly + 18, 10, { bold: true });
+        paint(s, legendEntries(entries, 0, 0, use / 4 / LK, 4), RQ, ly + 30, LK);
+      }
     }
   }
+  const diagPages = sheets.length;
   const page1 = doc.getPage(diagPages - 1);
 
   // ---------- from page 2: story text ----------
@@ -711,11 +914,11 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
     strokeStyle(page, R, y, w2 - R, y);
     write(page, t('So liest man den Text', 'How to read the text'), R, y + 22, 11, { bold: true });
     const help = ir.language === 'en'
-      ? [['IT STARTS', 'How the process begins, and with whom.'], ['IF … ELSE', 'Two paths. Exactly one is taken.'],
+      ? [['IT STARTS', 'How the process begins, and with whom.'], ['IF … ELSE', 'Two or more paths. Exactly one is taken.'],
          ['IN CASE OF', 'Something can interrupt the step before.'], ['WAIT FOR', 'The process stops until something arrives.'],
          ['CONTINUE AT', 'The path jumps back to a step.'], ['BACK ON THE PATH', 'A postponed path continues here.'],
          ['END', 'This path ends here.'], [t('Einrückung', 'Indent'), 'A side path. Afterwards it continues on the left.']]
-      : [['ES BEGINNT', 'So fängt der Ablauf an, und bei wem.'], ['WENN … SONST', 'Zwei Wege. Genau einer wird gegangen.'],
+      : [['ES BEGINNT', 'So fängt der Ablauf an, und bei wem.'], ['WENN … SONST', 'Zwei oder mehr Wege. Genau einer wird gegangen.'],
          ['FALLS', 'Am Schritt davor kann etwas dazwischenkommen.'], ['WARTEN AUF', 'Der Ablauf steht, bis etwas ankommt.'],
          ['WEITER BEI', 'Der Weg springt zurück zu einem Schritt.'], ['WEITER AUF DEM WEG', 'Ein zurückgestellter Weg geht hier weiter.'],
          ['ENDE', 'Hier hört dieser Weg auf.'], ['Einrückung', 'Ein Nebenweg. Danach geht es links weiter.']];
@@ -739,8 +942,8 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
 
   // ---------- Header and footer on every page, now with the page count known ----------
   const all = doc.getPages();
-  const state = new Date().toLocaleDateString(ir.language === 'en' ? 'en-GB' : 'de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const file = t('arbeitsdatei', 'working-file');
+  const state = shortDate(new Date(), ir.language);
+  const { status, verdict, file } = readingCopyTexts(ir.language, opts.copy, state);
   all.forEach((s, i) => {
     const [w, h] = [s.getWidth(), s.getHeight()];
     const diag = i < diagPages;
@@ -752,23 +955,55 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
       write(s, z, x, r + 12, 7, { bold: true, color: F.gray });
       x += boxWidth(z, 7, true) + 1.2;
     }
-    write(s, `${t('Stand', 'As of')} ${state} · ${num}`, w - r, r + 12, 7.5, { color: F.gray, anchor: 'end' });
-    write(s, ir.name, r, r + 36, 20, { bold: true });
-    const part = diagPages > 1 ? t(` (Teil ${i + 1} von ${diagPages})`, ` (part ${i + 1} of ${diagPages})`) : '';
-    write(s, diag ? t('Der Ablauf als Diagramm mit Legende', 'The process as a diagram with legend') + part : t('Der Ablauf in Worten, Zeile für Zeile. Nebenwege sind eingerückt.', 'The process in words, line by line. Side paths are indented.'), r, r + 51, 9, { color: F.gray });
+    write(s, `${status} · ${num}`, w - r, r + 12, 7.5, { color: F.gray, anchor: 'end' });
+    const sheet = sheets[i];
+    const parent = sheet?.dg.parent;
+    write(s, parent?.anytime ? t(`Jederzeit: ${parent.name}`, `At any time: ${parent.name}`) : parent ? t(`Teilablauf: ${parent.name}`, `Subprocess: ${parent.name}`) : ir.name, r, r + 36, 20, { bold: true });
+    const pages = sheet?.dg.pages ?? 1;
+    const part = pages > 1 ? t(` (Teil ${sheet.part + 1} von ${pages})`, ` (part ${sheet.part + 1} of ${pages})`) : '';
+    const owner = sheet?.dg.owner ?? ir;
+    const lane = parent && owner.lanes.find((l) => l.id === parent.laneId)?.name;
+    const belongs = parent && t(`gehört zu „${owner.name}“, Seite ${boxPage[parent.id] ?? 1}`, `belongs to “${owner.name}”, page ${boxPage[parent.id] ?? 1}`) + (lane ? t(`, Bahn ${lane}`, `, lane ${lane}`) : '');
+    write(s, !diag ? t('Der Ablauf in Worten, Zeile für Zeile. Nebenwege sind eingerückt.', 'The process in words, line by line. Side paths are indented.') : (belongs || t('Der Ablauf als Diagramm mit Legende', 'The process as a diagram with legend')) + part, r, r + 51, 9, { color: F.gray });
     const textPage = diagPages + 1;
+    const lastPart = sheet && sheet.part === pages - 1;
     const hint = !diag ? []
-      : i < diagPages - 1 ? [t('Links beim Kreis beginnen und den Pfeilen folgen.', 'Start at the circle on the left and follow the arrows.'), t(`Das Diagramm geht auf Seite ${i + 2} weiter.`, `The diagram continues on page ${i + 2}.`)]
-      : [i ? t(`Fortsetzung von Seite ${i}.`, `Continued from page ${i}.`) : t('Links beim Kreis beginnen und den Pfeilen folgen.', 'Start at the circle on the left and follow the arrows.'),
+      : !lastPart ? [t('Links beim Kreis beginnen und den Pfeilen folgen.', 'Start at the circle on the left and follow the arrows.'), t(`Das Diagramm geht auf Seite ${i + 2} weiter.`, `The diagram continues on page ${i + 2}.`)]
+      : [sheet.part ? t(`Fortsetzung von Seite ${i}.`, `Continued from page ${i}.`) : t('Links beim Kreis beginnen und den Pfeilen folgen.', 'Start at the circle on the left and follow the arrows.'),
          ...(all.length > diagPages ? [t(`Seite ${textPage} erzählt denselben Ablauf in Worten.`, `Page ${textPage} tells the same process in words.`)] : [])];
     hint.forEach((z, j) => write(s, z, w - r, r + 36 + j * 12, 8.5, { color: F.gray, anchor: 'end' }));
     strokeStyle(s, r, r + 62, w - r, r + 62);
     strokeStyle(s, r, h - r - 14, w - r, h - r - 14);
-    write(s, t(`Zum Nachschlagen. Geändert wird nur die Arbeitsdatei ${file}.bpmn, nicht dieses Leseexemplar.`, `For reference. Only the working file ${file}.bpmn is changed, not this reading copy.`), r, h - r, 7, { color: F.gray });
-    write(s, `${ir.name} · ${num}`, w - r, h - r, 7, { color: F.gray, anchor: 'end' });
+    const right = `${ir.name} · ${num}`;
+    const reference = t(`Zum Nachschlagen. Geändert wird nur die Arbeitsdatei ${file}, nicht dieses Leseexemplar.`, `For reference. Only the working file ${file} is changed, not this reading copy.`);
+    // The verdict always; the reference sentence only while it fits beside the page number.
+    const both = verdict ? `${verdict} ${reference}` : reference;
+    const left = boxWidth(both, 7) <= w - 2 * r - boxWidth(right, 7) - 16 ? both : verdict;
+    write(s, left, r, h - r, 7, { color: F.gray });
+    write(s, right, w - r, h - r, 7, { color: F.gray, anchor: 'end' });
   });
 
   return doc.save();
+}
+
+/**
+ * Head and foot texts of a reading copy about its approval: `status` (head, right), `verdict` (foot,
+ * left, before the reference sentence; empty without an approval state) and the working file's name.
+ * `today` is the date of the state, already formatted.
+ */
+export function readingCopyTexts(language: Language | undefined, copy: ReadingCopyState | undefined, today: string): { status: string; verdict: string; file: string } {
+  const t = (de: string, en: string) => tx(language, de, en);
+  const day = (iso: string) => shortDate(iso, language);
+  const file = copy?.file ?? t('arbeitsdatei', 'working-file') + '.bpmn';
+  const v = copy?.valid;
+  const status = !copy ? `${t('Stand', 'As of')} ${today}`
+    : v ? `${t('Gültige Version', 'Valid version')} ${v.number} · ${t(`freigegeben am ${day(v.date)} von`, `approved on ${day(v.date)} by`)} ${v.by}`
+    : `${t('Entwurf', 'Draft')} · ${t('Stand', 'As of')} ${today}`;
+  const verdict = !copy ? ''
+    : v ? (v.previous ? t(`Gültige Version ${v.number} · ersetzt Version ${v.previous.number} vom ${day(v.previous.date)}.`, `Valid version ${v.number} · replaces version ${v.previous.number} of ${day(v.previous.date)}.`) : t(`Gültige Version ${v.number}.`, `Valid version ${v.number}.`))
+    : copy.lastValid ? t(`Nicht freigegeben. Gültig ist Version ${copy.lastValid.number} vom ${day(copy.lastValid.date)}.`, `Not approved. Valid is version ${copy.lastValid.number} of ${day(copy.lastValid.date)}.`)
+    : t('Nicht freigegeben.', 'Not approved.');
+  return { status, verdict, file };
 }
 
 /** Line into pieces: signal word (bold), object (area behind it), arrow (drawn), text. */
@@ -800,10 +1035,12 @@ export async function renderBoth(
   ir: ProcessIR,
   positions: PositionMap,
   readingCopy: boolean,
-  told?: string
+  told?: string,
+  copy?: ReadingCopyState
 ): Promise<{ svg: string; pdf: Uint8Array }> {
-  const opts = { draft: !readingCopy };
-  return { svg: toSvg(ir, positions, opts), pdf: await toPdf(ir, positions, { ...opts, told }) };
+  // With an approval state, everything but a valid version is a draft.
+  const opts = { draft: !readingCopy || (copy !== undefined && !copy.valid) };
+  return { svg: toSvg(ir, positions, opts), pdf: await toPdf(ir, positions, { ...opts, told, copy }) };
 }
 
 const round = (v: number) => Math.round(v * 10) / 10;

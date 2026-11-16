@@ -42,6 +42,7 @@ as `*.license`):
 | @vue/shared | 3.5.43 | MIT |
 | vue | 3.5.43 | MIT |
 | @vuepic/vue-datepicker | 11.0.3 | MIT |
+| @vueuse/components | 14.4.0 | MIT |
 | @vueuse/core | 14.4.0 | MIT |
 | @vueuse/shared | 14.4.0 | MIT |
 | axios | 1.21.1 | MIT |
@@ -54,6 +55,7 @@ as `*.license`):
 | escape-html | 1.0.3 | MIT |
 | eventemitter3 | 5.0.4 | MIT |
 | floating-vue | 5.4.0 | MIT |
+| linkifyjs | 4.4.0 | MIT |
 | focus-trap | 8.2.4 | MIT |
 | min-dash | 5.1.0 | MIT |
 | moddle | 8.2.1 | MIT |

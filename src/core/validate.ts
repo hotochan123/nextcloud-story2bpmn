@@ -1,4 +1,4 @@
-import { ProcessIR, Issue, outgoing, incoming, isFlowNode } from './ir.js';
+import { ProcessIR, Issue, outgoing, incoming, isFlowNode, isAnytime } from './ir.js';
 import { tx } from './language.js';
 
 const issue = (rule: string, message: string, elementId?: string, elementName?: string): Issue => ({
@@ -115,7 +115,8 @@ export function validateIR(ir: ProcessIR): Issue[] {
   const forward = reach(ir, starts.map((s) => s.id), 'forward');
   const backward = reach(ir, ends.map((s) => s.id), 'backward');
 
-  for (const n of ir.nodes.filter(isFlowNode)) {
+  // Something that can come at any time has no arrows: it is not part of the sequence flow.
+  for (const n of ir.nodes.filter((m) => isFlowNode(m) && !isAnytime(m))) {
     if (starts.length && !forward.has(n.id))
       issues.push(issue('unreachable', t('Knoten ist vom Start aus nicht erreichbar', 'Node cannot be reached from the start'), n.id, n.name));
     else if (ends.length && !backward.has(n.id))

@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace OCA\Story2Bpmn\Tests\Unit\Service;
 
+use OCA\Story2Bpmn\Service\ApprovalCheck;
 use OCA\Story2Bpmn\Service\WorkingFileException;
 use OCA\Story2Bpmn\Service\WorkingFileService;
+use OCP\Comments\ICommentsManager;
 use OCP\Files\File;
 use OCP\Files\Folder;
 use OCP\Files\IRootFolder;
 use OCP\Files\Node;
+use OCP\Files\Storage\ISharedStorage;
+use OCP\Files\Storage\IStorage;
+use OCP\Share\IShare;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -30,11 +35,20 @@ class WorkingFileServiceTest extends TestCase {
         // only alice has files; any other account sees an empty folder
         $empty = $this->createMock(Folder::class);
         $root->method('getUserFolder')->willReturnCallback(fn (string $uid) => $uid === 'alice' ? $this->home : $empty);
-        $this->service = new WorkingFileService($root);
+        $this->service = new WorkingFileService($root, new ApprovalCheck($this->createMock(ICommentsManager::class)));
     }
 
-    private function file(int $id, string $name = 'order.bpmn', string $etag = 'e1', bool $updateable = true, int $size = 40, string $content = self::XML): File&MockObject {
+    private function file(int $id, string $name = 'order.bpmn', string $etag = 'e1', bool $updateable = true, int $size = 40, string $content = self::XML, ?IShare $share = null): File&MockObject {
         $f = $this->createMock(File::class);
+        if ($share === null) {
+            $storage = $this->createMock(IStorage::class);
+            $storage->method('instanceOfStorage')->willReturn(false);
+        } else {
+            $storage = $this->createMock(ISharedStorage::class);
+            $storage->method('instanceOfStorage')->willReturnCallback(fn (string $c) => $c === ISharedStorage::class);
+            $storage->method('getShare')->willReturn($share);
+        }
+        $f->method('getStorage')->willReturn($storage);
         $f->method('getId')->willReturn($id);
         $f->method('getName')->willReturn($name);
         $f->method('getPath')->willReturn('/alice/files/Processes/' . $name);
@@ -70,7 +84,7 @@ class WorkingFileServiceTest extends TestCase {
         $this->file(7);
         $r = $this->service->read('alice', 7);
         $this->assertSame(['id' => 7, 'name' => 'order.bpmn', 'path' => '/Processes/order.bpmn', 'etag' => 'e1',
-            'hash' => hash('sha256', self::XML), 'mtime' => 1700000000, 'canSave' => true, 'content' => self::XML], $r);
+            'hash' => hash('sha256', self::XML), 'mtime' => 1700000000, 'canSave' => true, 'canDownload' => true, 'content' => self::XML], $r);
     }
 
     public function testReadOfForeignOrMissingIdIsNotFound(): void {
@@ -223,10 +237,10 @@ class WorkingFileServiceTest extends TestCase {
     private const PDF = "%PDF-1.7\n%\xe2\xe3\n1 0 obj<<>>endobj\n%%EOF";
 
     /** order.bpmn (id 7) in folder 3, whose existing nodes are given by name. */
-    private function beside(array $existing = [], bool $creatable = true, string $name = 'order.bpmn'): Folder&MockObject {
+    private function beside(array $existing = [], bool $creatable = true, string $name = 'order.bpmn', string $content = self::XML, ?IShare $share = null): Folder&MockObject {
         $d = $this->folder(3, $creatable, array_keys($existing));
         $d->method('get')->willReturnCallback(fn (string $n) => $existing[$n]);
-        $f = $this->file(7, $name);
+        $f = $this->file(7, $name, content: $content, size: strlen($content), share: $share);
         $f->method('getParent')->willReturn($d);
         return $d;
     }
@@ -260,6 +274,37 @@ class WorkingFileServiceTest extends TestCase {
         $d = $this->beside(name: 'ORDER.BPMN');
         $d->expects($this->once())->method('newFile')->with('ORDER.pdf')->willReturn($this->pdfFile(12));
         $this->assertSame('ORDER.pdf', $this->service->publish('alice', 7, base64_encode(self::PDF))['name']);
+    }
+
+    public function testPublishDraftGetsItsOwnNameAndLeavesTheValidCopy(): void {
+        $valid = $this->pdfFile(12);
+        $valid->expects($this->never())->method('putContent');
+        $d = $this->beside(['order.pdf' => $valid]);
+        $d->expects($this->once())->method('newFile')->with('order (Entwurf).pdf', self::PDF)->willReturn($this->pdfFile(13));
+        $r = $this->service->publish('alice', 7, base64_encode(self::PDF), true, 'de');
+        $this->assertSame('order (Entwurf).pdf', $r['name']);
+        $this->assertFalse($r['replaced']);
+    }
+
+    public function testPublishOfAnUnconfirmedValidVersionIsRefused(): void {
+        $xml = (string)file_get_contents(__DIR__ . '/../../core/fixtures/approved-v3.bpmn');
+        $d = $this->beside(content: $xml);
+        $d->expects($this->never())->method('newFile');
+        $e = $this->refused(409, fn () => $this->service->publish('alice', 7, base64_encode(self::PDF)));
+        $this->assertSame('This state is not a confirmed valid version. Only a draft reading copy can be filed.', $e->getMessage());
+    }
+
+    public function testPublishDraftOfAnUnconfirmedValidVersionIsFiled(): void {
+        $xml = (string)file_get_contents(__DIR__ . '/../../core/fixtures/approved-v3.bpmn');
+        $d = $this->beside(content: $xml);
+        $d->expects($this->once())->method('newFile')->with('order (Entwurf).pdf')->willReturn($this->pdfFile(13));
+        $this->assertSame('order (Entwurf).pdf', $this->service->publish('alice', 7, base64_encode(self::PDF), true, 'de')['name']);
+    }
+
+    public function testReadingCopyNames(): void {
+        $this->assertSame('a.pdf', WorkingFileService::readingCopyName('a.bpmn', false, 'en'));
+        $this->assertSame('a (Draft).pdf', WorkingFileService::readingCopyName('a.BPMN', true, 'en'));
+        $this->assertSame('a (Entwurf).pdf', WorkingFileService::readingCopyName('a.bpmn', true, 'de'));
     }
 
     /** @return array<string, array{mixed, int}> */
@@ -305,5 +350,63 @@ class WorkingFileServiceTest extends TestCase {
         $this->refused(404, fn () => $this->service->publish('bob', 7, base64_encode(self::PDF)));
         $this->refused(404, fn () => $this->service->publish('alice', 99, base64_encode(self::PDF)));
         $this->refused(400, fn () => $this->service->publish('alice', 8, base64_encode(self::PDF)));
+    }
+
+    // Job 434: the download setting of a share.
+    private function share(bool $see, bool $download): IShare&MockObject {
+        $s = $this->createMock(IShare::class);
+        $s->method('canSeeContent')->willReturn($see);
+        $s->method('canDownload')->willReturn($download);
+        return $s;
+    }
+
+    public function test434ShareThatHidesTheContentRefusesReadingWithoutReading(): void {
+        $f = $this->file(7, share: $this->share(false, false));
+        $f->expects($this->never())->method('getContent');
+        $e = $this->refused(403, fn () => $this->service->read('alice', 7));
+        $this->assertSame('The share of this file does not allow viewing its content.', $e->getMessage());
+    }
+
+    public function test434ViewOnlyShareReadsButReportsNoDownload(): void {
+        $this->file(7, share: $this->share(true, false));
+        $r = $this->service->read('alice', 7);
+        $this->assertSame(self::XML, $r['content']);
+        $this->assertFalse($r['canDownload']);
+    }
+
+    public function test434ShareWithDownloadReportsDownload(): void {
+        $this->file(7, share: $this->share(true, true));
+        $this->assertTrue($this->service->read('alice', 7)['canDownload']);
+    }
+
+    public function test434ShareStorageWhoseShareCannotBeReadRefuses(): void {
+        $f = $this->createMock(File::class);
+        $f->method('getId')->willReturn(7);
+        $f->method('getName')->willReturn('order.bpmn');
+        $f->method('isReadable')->willReturn(true);
+        $storage = $this->createMock(ISharedStorage::class);
+        $storage->method('instanceOfStorage')->willReturn(true);
+        $storage->method('getShare')->willThrowException(new \RuntimeException('gone'));
+        $f->method('getStorage')->willReturn($storage);
+        $f->expects($this->never())->method('getContent');
+        $this->nodes[7] = $f;
+        $this->refused(403, fn () => $this->service->read('alice', 7));
+    }
+
+    public function test434ViewOnlyShareFilesNoReadingCopy(): void {
+        foreach ([false, true] as $draft) {
+            $p = $this->pdfFile(12);
+            $p->expects($this->never())->method('putContent');
+            $d = $this->beside(['order.pdf' => $p], share: $this->share(true, false));
+            $d->expects($this->never())->method('newFile');
+            $e = $this->refused(403, fn () => $this->service->publish('alice', 7, base64_encode(self::PDF), $draft));
+            $this->assertSame('The share of this file does not allow downloads, so no reading copy can be filed.', $e->getMessage());
+        }
+    }
+
+    public function test434ShareWithDownloadFilesTheReadingCopy(): void {
+        $d = $this->beside(share: $this->share(true, true));
+        $d->expects($this->once())->method('newFile')->with('order.pdf', self::PDF)->willReturn($this->pdfFile(12));
+        $this->assertSame('order.pdf', $this->service->publish('alice', 7, base64_encode(self::PDF))['name']);
     }
 }

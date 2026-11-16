@@ -5,11 +5,23 @@ import { replay, loadStory, textFrom } from '../../src/workbench.js';
 import { Move } from '../../src/core/story.js';
 import { Language } from '../../src/core/language.js';
 import { fromStored } from '../../src/core/storyFormat.js';
+import { tell, run, emptyProcess, toSvg } from '../../src/core/index.js';
+
+// Since job 383 the preview has no legend and groups each node's shapes (data-move); the SVG of the
+// fixture is the drawing of the core with the options the preview had in job 379, so the core stays checked
+// byte for byte. The new preview options are tested in render.test.ts and workbench.test.ts.
+async function drawing(moves: Move[], language: Language): Promise<string> {
+	const g = tell(moves, language);
+	const e = await run({ ir: { ...emptyProcess('P', g.ir.name, language), story: moves }, ops: g.ops });
+	return e.ir.nodes.length ? toSvg(e.ir, e.positions, { draft: !e.readingCopy, here: g.here }) : '';
+}
 
 // Golden master of job 379: every intermediate state of two example stories, captured before the code
 // was renamed to English. The output (BPMN XML with the stored story, SVG preview, story text, the
 // offered moves) must stay byte for byte the same. GOLDEN_WRITE=1 rewrites the fixture (never after the
 // rename: the fixture holds the old output; only its labels were translated with the code).
+// Job 382 changed four states by hand: in legacy-working-file.bpmn steps 10 and 11 an arrow left
+// "Ware auf Lager?" upwards right through the question, which now sits above left of the diamond.
 const DIR = 'tests/core/fixtures/';
 const GOLDEN = DIR + 'golden.json';
 const FILES = ['legacy-working-file.bpmn', 'legacy-invoice.bpmn'];
@@ -24,7 +36,8 @@ async function capture(): Promise<Record<string, unknown>> {
 		for (const language of ['de', 'en'] as Language[]) {
 			for (let i = 1; i <= moves.length; i++) {
 				const a = await replay(moves.slice(0, i), language);
-				out[`${file}/${language}/${i}`] = { question: a.question, options: a.options, open: a.open, done: a.done, errors: a.errors, text: textFrom(a.storyText), xml: a.xml, svg: a.svg };
+				// Job 391 added "at any time" as the last option of the main flow, job 392 "it can also start differently" after the trigger; the rest stays as captured.
+				out[`${file}/${language}/${i}`] = { question: a.question, options: a.options.filter((o) => o !== 'anytime' && o !== 'orStart'), open: a.open, done: a.done, errors: a.errors, text: textFrom(a.storyText), xml: a.xml, svg: await drawing(moves.slice(0, i), language) };
 			}
 		}
 	}

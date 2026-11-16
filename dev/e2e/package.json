@@ -1,0 +1,11 @@
+{
+  "name": "story2bpmn-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "description": "Browser tests of Story2BPMN (dev/it/run.sh with E2E=1); playwright-core must match the image mcr.microsoft.com/playwright:v1.49.1-jammy",
+  "dependencies": {
+    "playwright-core": "1.49.1"
+  }
+}

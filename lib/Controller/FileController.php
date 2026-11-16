@@ -42,8 +42,10 @@ class FileController extends Controller {
     }
 
     #[NoAdminRequired]
-    public function publish(int $id, mixed $content = null): JSONResponse {
-        return $this->run(fn (string $uid) => $this->files->publish($uid, $id, $content));
+    public function publish(int $id, mixed $content = null, mixed $draft = false, mixed $language = 'de'): JSONResponse {
+        $draft = $draft === true || $draft === 'true';
+        $language = $language === 'en' ? 'en' : 'de';
+        return $this->run(fn (string $uid) => $this->files->publish($uid, $id, $content, $draft, $language));
     }
 
     /** @param callable(string): array<string, mixed> $action */
@@ -75,6 +77,9 @@ class FileController extends Controller {
             'The reading copy is not a PDF.' => $this->l->t('The reading copy is not a PDF.'),
             'A folder with the name of the reading copy is in the way.' => $this->l->t('A folder with the name of the reading copy is in the way.'),
             'You may not change the reading copy. Check the permissions of the folder.' => $this->l->t('You may not change the reading copy. Check the permissions of the folder.'),
+            'This state is not a confirmed valid version. Only a draft reading copy can be filed.' => $this->l->t('This state is not a confirmed valid version. Only a draft reading copy can be filed.'),
+            'The share of this file does not allow viewing its content.' => $this->l->t('The share of this file does not allow viewing its content.'),
+            'The share of this file does not allow downloads, so no reading copy can be filed.' => $this->l->t('The share of this file does not allow downloads, so no reading copy can be filed.'),
             default => $this->l->t('The request could not be carried out.'),
         };
     }

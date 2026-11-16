@@ -53,3 +53,35 @@ test('378 AK3 every t(/n( call in src uses the domain story2bpmn, l10n registers
 		assert.match(readFileSync(`l10n/${language}.js`, 'utf8'), /OC\.L10N\.register\(\s*"story2bpmn"/);
 	}
 });
+
+test('422 AK1 one action, one word: the same German words in de and de_DE', () => {
+	const words: Record<string, string> = {
+		'Send request': 'Freigabe-Bitte senden',
+		'Withdraw request': 'Freigabe-Bitte zurückziehen',
+		'Withdraw the request for approval?': 'Freigabe-Bitte zurückziehen?',
+		'Tell here': 'Weitererzählen',
+		'Tell now': 'Weitererzählen',
+		'Stop telling here': 'Nicht weitererzählen',
+		'Edit line': 'Ändern',
+		'Edit line {number}': 'Zeile {number} ändern',
+		Edit: 'Ändern',
+	};
+	for (const language of ['de', 'de_DE']) {
+		const json = JSON.parse(readFileSync(`l10n/${language}.json`, 'utf8')).translations;
+		for (const [k, v] of Object.entries(words)) assert.equal(json[k], v, `${language}: ${k}`);
+		const values = Object.values(json).flat() as string[];
+		assert.deepEqual(values.filter((w) => /^Bitte (senden|zurückziehen)$/.test(w)), [], language);
+	}
+});
+
+test('422 AK2 l10n/de uses the informal "Du": no "Sie" form, no old words', () => {
+	const json = JSON.parse(readFileSync('l10n/de.json', 'utf8')).translations;
+	const values = Object.values(json).flat() as string[];
+	const formal = /\b(Sie|Ihr\w*|Ihnen)\b/;
+	assert.deepEqual(values.filter((w) => formal.test(w)), []);
+	// Counter-probe: the formal address is recognised, "sie" of the third person is not
+	assert.ok(formal.test('Beispiel – ändern Sie, was Sie wollen.') && formal.test('in Ihren Dateien'));
+	assert.ok(!formal.test('Teile die Datei, damit sie freigeben kann.'));
+	const old = /Hier weitererzählen|Jetzt erzählen|Zeile bearbeiten|^Bitte senden/;
+	assert.deepEqual(values.filter((w) => old.test(w)), []);
+});

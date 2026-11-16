@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bpmnc="urn:bpmn-core:geschichte" id="Definitions_P" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-core" exporterVersion="1" xml:lang="de" bpmnc:geschichte="[{&#34;zug&#34;:&#34;start&#34;,&#34;text&#34;:&#34;Antrag&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Vollständig&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Eilig&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Abgelehnt&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Betrag hoch&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Kunde bekannt&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Info A&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Info B&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Prüfen&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Freigeben&#34;,&#34;stelle&#34;:&#34;Chef&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Freigegeben&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Fertig&#34;},{&#34;zug&#34;:&#34;weiter&#34;,&#34;ziel&#34;:&#34;Ende_4&#34;}]">
+  <bpmn:collaboration id="P_collaboration">
+    <bpmn:participant id="P_pool" name="Prozess" processRef="P" />
+  </bpmn:collaboration>
+  <bpmn:process id="P" name="Prozess" isExecutable="false">
+    <bpmn:laneSet id="P_lanes">
+      <bpmn:lane id="Bahn_1" name="Team">
+        <bpmn:flowNodeRef>Start_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_6</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_7</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_8</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_9</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Bahn_2" name="Chef">
+        <bpmn:flowNodeRef>Schritt_10</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_11</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_12</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_1" name="Antrag">
+      <bpmn:outgoing>f_Start_1__Wenn_2</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:exclusiveGateway id="Wenn_2" name="Vollständig" default="f_Wenn_2__Wenn_5">
+      <bpmn:incoming>f_Start_1__Wenn_2</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_2__Wenn_3</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_2__Wenn_5</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_3" name="Eilig">
+      <bpmn:incoming>f_Wenn_2__Wenn_3</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_3__Ende_4</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_4" name="Abgelehnt">
+      <bpmn:incoming>f_Wenn_3__Ende_4</bpmn:incoming>
+      <bpmn:incoming>f_Wenn_11__Ende_4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Wenn_5" name="Betrag hoch" default="f_Wenn_5__Wenn_6">
+      <bpmn:incoming>f_Wenn_2__Wenn_5</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_5__Wenn_6</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_5__Schritt_9</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_6" name="Kunde bekannt" default="f_Wenn_6__Ende_8">
+      <bpmn:incoming>f_Wenn_5__Wenn_6</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_6__Ende_7</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_6__Ende_8</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_7" name="Info A">
+      <bpmn:incoming>f_Wenn_6__Ende_7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Ende_8" name="Info B">
+      <bpmn:incoming>f_Wenn_6__Ende_8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Schritt_9" name="Prüfen">
+      <bpmn:incoming>f_Wenn_5__Schritt_9</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_9__Schritt_10</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Schritt_10" name="Freigeben">
+      <bpmn:incoming>f_Schritt_9__Schritt_10</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_10__Wenn_11</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Wenn_11" name="Freigegeben" default="f_Wenn_11__Ende_4">
+      <bpmn:incoming>f_Schritt_10__Wenn_11</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_11__Ende_12</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_11__Ende_4</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_12" name="Fertig">
+      <bpmn:incoming>f_Wenn_11__Ende_12</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_Start_1__Wenn_2" sourceRef="Start_1" targetRef="Wenn_2" />
+    <bpmn:sequenceFlow id="f_Wenn_2__Wenn_3" name="ja" sourceRef="Wenn_2" targetRef="Wenn_3">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_3__Ende_4" name="ja" sourceRef="Wenn_3" targetRef="Ende_4">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_2__Wenn_5" name="nein" sourceRef="Wenn_2" targetRef="Wenn_5" />
+    <bpmn:sequenceFlow id="f_Wenn_5__Wenn_6" name="nein" sourceRef="Wenn_5" targetRef="Wenn_6" />
+    <bpmn:sequenceFlow id="f_Wenn_6__Ende_7" name="ja" sourceRef="Wenn_6" targetRef="Ende_7">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_6__Ende_8" name="nein" sourceRef="Wenn_6" targetRef="Ende_8" />
+    <bpmn:sequenceFlow id="f_Wenn_5__Schritt_9" name="ja" sourceRef="Wenn_5" targetRef="Schritt_9">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Schritt_9__Schritt_10" sourceRef="Schritt_9" targetRef="Schritt_10" />
+    <bpmn:sequenceFlow id="f_Schritt_10__Wenn_11" sourceRef="Schritt_10" targetRef="Wenn_11" />
+    <bpmn:sequenceFlow id="f_Wenn_11__Ende_12" name="ja" sourceRef="Wenn_11" targetRef="Ende_12">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_11__Ende_4" name="nein" sourceRef="Wenn_11" targetRef="Ende_4" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="P_diagram">
+    <bpmndi:BPMNPlane id="P_plane" bpmnElement="P_collaboration">
+      <bpmndi:BPMNShape id="P_pool_di" bpmnElement="P_pool" isHorizontal="true">
+        <dc:Bounds x="52" y="55" width="1366" height="445" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_1_di" bpmnElement="Bahn_1" isHorizontal="true">
+        <dc:Bounds x="82" y="55" width="1336" height="270" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_2_di" bpmnElement="Bahn_2" isHorizontal="true">
+        <dc:Bounds x="82" y="325" width="1336" height="175" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="142" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_2_di" bpmnElement="Wenn_2" isMarkerVisible="true">
+        <dc:Bounds x="325" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_3_di" bpmnElement="Wenn_3" isMarkerVisible="true">
+        <dc:Bounds x="515" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_4_di" bpmnElement="Ende_4">
+        <dc:Bounds x="1282" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_5_di" bpmnElement="Wenn_5" isMarkerVisible="true">
+        <dc:Bounds x="515" y="205" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_6_di" bpmnElement="Wenn_6" isMarkerVisible="true">
+        <dc:Bounds x="705" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_7_di" bpmnElement="Ende_7">
+        <dc:Bounds x="902" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_8_di" bpmnElement="Ende_8">
+        <dc:Bounds x="902" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_9_di" bpmnElement="Schritt_9">
+        <dc:Bounds x="660" y="190" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_10_di" bpmnElement="Schritt_10">
+        <dc:Bounds x="850" y="380" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_11_di" bpmnElement="Wenn_11" isMarkerVisible="true">
+        <dc:Bounds x="1085" y="395" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_12_di" bpmnElement="Ende_12">
+        <dc:Bounds x="1282" y="402" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_Start_1__Wenn_2_di" bpmnElement="f_Start_1__Wenn_2">
+        <di:waypoint x="178" y="120" />
+        <di:waypoint x="325" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_2__Wenn_3_di" bpmnElement="f_Wenn_2__Wenn_3">
+        <di:waypoint x="375" y="120" />
+        <di:waypoint x="515" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_3__Ende_4_di" bpmnElement="f_Wenn_3__Ende_4">
+        <di:waypoint x="540" y="95" />
+        <di:waypoint x="540" y="70" />
+        <di:waypoint x="1300" y="70" />
+        <di:waypoint x="1300" y="102" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_2__Wenn_5_di" bpmnElement="f_Wenn_2__Wenn_5">
+        <di:waypoint x="350" y="145" />
+        <di:waypoint x="350" y="230" />
+        <di:waypoint x="515" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_5__Wenn_6_di" bpmnElement="f_Wenn_5__Wenn_6">
+        <di:waypoint x="540" y="205" />
+        <di:waypoint x="540" y="185" />
+        <di:waypoint x="730" y="185" />
+        <di:waypoint x="730" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Ende_7_di" bpmnElement="f_Wenn_6__Ende_7">
+        <di:waypoint x="755" y="120" />
+        <di:waypoint x="902" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Ende_8_di" bpmnElement="f_Wenn_6__Ende_8">
+        <di:waypoint x="730" y="95" />
+        <di:waypoint x="730" y="80" />
+        <di:waypoint x="882" y="80" />
+        <di:waypoint x="882" y="230" />
+        <di:waypoint x="902" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_5__Schritt_9_di" bpmnElement="f_Wenn_5__Schritt_9">
+        <di:waypoint x="565" y="230" />
+        <di:waypoint x="660" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_9__Schritt_10_di" bpmnElement="f_Schritt_9__Schritt_10">
+        <di:waypoint x="730" y="270" />
+        <di:waypoint x="730" y="420" />
+        <di:waypoint x="850" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_10__Wenn_11_di" bpmnElement="f_Schritt_10__Wenn_11">
+        <di:waypoint x="990" y="420" />
+        <di:waypoint x="1085" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_11__Ende_12_di" bpmnElement="f_Wenn_11__Ende_12">
+        <di:waypoint x="1135" y="420" />
+        <di:waypoint x="1282" y="420" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_11__Ende_4_di" bpmnElement="f_Wenn_11__Ende_4">
+        <di:waypoint x="1110" y="395" />
+        <di:waypoint x="1110" y="120" />
+        <di:waypoint x="1282" y="120" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

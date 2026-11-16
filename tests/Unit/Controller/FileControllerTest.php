@@ -83,10 +83,16 @@ class FileControllerTest extends TestCase {
 
     public function testPublishPassesAccountAndContent(): void {
         $this->login('alice');
-        $this->service->expects($this->once())->method('publish')->with('alice', 7, 'UERG')->willReturn(['id' => 12]);
+        $this->service->expects($this->once())->method('publish')->with('alice', 7, 'UERG', false, 'de')->willReturn(['id' => 12]);
         $r = $this->controller->publish(7, 'UERG');
         $this->assertSame(200, $r->getStatus());
         $this->assertSame(['id' => 12], $r->getData());
+    }
+
+    public function testPublishDraftFlagAndLanguageAreNormalised(): void {
+        $this->login('alice');
+        $this->service->expects($this->once())->method('publish')->with('alice', 7, 'UERG', true, 'de')->willReturn(['id' => 13]);
+        $this->assertSame(200, $this->controller->publish(7, 'UERG', 'true', 'fr')->getStatus());
     }
 
     public function testPublishRefusalKeepsStatusAndTranslatedMessage(): void {
@@ -101,5 +107,18 @@ class FileControllerTest extends TestCase {
     public function testPublishWithoutLoginIsUnauthorized(): void {
         $this->service->expects($this->never())->method('publish');
         $this->assertSame(401, $this->controller->publish(7, 'x')->getStatus());
+    }
+
+    public function test434ShareRefusalsAreTranslated(): void {
+        $this->login('alice');
+        $this->service->method('read')->willThrowException(
+            new WorkingFileException(403, 'The share of this file does not allow viewing its content.'));
+        $this->service->method('publish')->willThrowException(
+            new WorkingFileException(403, 'The share of this file does not allow downloads, so no reading copy can be filed.'));
+        $r = $this->controller->show(7);
+        $this->assertSame(403, $r->getStatus());
+        $this->assertSame(['message' => '[The share of this file does not allow viewing its content.]'], $r->getData());
+        $r = $this->controller->publish(7, 'x');
+        $this->assertSame(['message' => '[The share of this file does not allow downloads, so no reading copy can be filed.]'], $r->getData());
     }
 }

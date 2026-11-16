@@ -1,4 +1,4 @@
-import { ProcessIR, Node, FlowNode, PositionMap, Position, isFlowNode } from './ir.js';
+import { ProcessIR, Node, FlowNode, PositionMap, Position, isFlowNode, isAnytime } from './ir.js';
 import { measureOne } from './readability.js';
 import { Language, tx } from './language.js';
 
@@ -7,6 +7,7 @@ export const SIZE: Record<string, { w: number; h: number }> = {
   end: { w: 36, h: 36 },
   exception: { w: 36, h: 36 },
   wait: { w: 36, h: 36 },
+  send: { w: 36, h: 36 },
   // 140 instead of 120: at 18 characters and font size 12 the text touched the sides
   // (measured ~6.2px per character, so ~112px in a 120px box). Wider
   // plus tighter wrapping, so that even a long word with punctuation fits.
@@ -49,15 +50,25 @@ export const sizeOf = (n: Node) => {
   const lines = wrap(n.name ?? '', TASK_CHARS).length;
   // Grey lines (system, deadline) under the name; spacing 4, 11 padding at top and bottom.
   // ponytail: measured with the longer English word, so the height does not depend on the language.
-  const k = extraLines(n, 'en').length;
-  return { w: s.w, h: Math.max(s.h + Math.max(0, lines - 3) * LINE, Math.ceil(lines * LINE + (k ? 4 + k * 12.5 : 0) + 22)) };
+  // A subprocess keeps one grey line free ("see page n" in the reading copy) and room for its plus below the text.
+  const k = extraLines(n, 'en').length + (n.subprocess ? 1 : 0);
+  // Plus and the bars of "for each" share one row at the bottom; what can come at any time has its trigger at the top.
+  const plus = (n.subprocess || n.forEach ? PLUS.size + PLUS.edge : 0) + (n.anytime ? CORNER : 0);
+  return { w: s.w, h: Math.max(s.h + Math.max(0, lines - 3) * LINE + plus, Math.ceil(lines * LINE + (k ? 4 + k * 12.5 : 0) + 22 + plus)) };
 };
 
-/** System and deadline of a task, as grey lines in the box. */
+/** Room for the trigger circle at the top of a box of what can come at any time. */
+export const CORNER = 18;
+
+/** Plus of a collapsed subprocess (symbol rules 2): square 14, bottom centre, 6 from the edge. */
+export const PLUS = { size: 14, edge: 6 };
+
+/** System and deadline of a task and what it runs for, as grey lines in the box. */
 export function extraLines(n: Node, language?: Language): string[] {
-  if (n.kind !== 'step' || !n.details) return [];
-  const { system, deadline } = n.details;
-  return [system, deadline && `${tx(language, 'Frist', 'Deadline')}: ${deadline}`]
+  if (n.kind !== 'step') return [];
+  const { system, deadline } = n.details ?? {};
+  const item = n.forEach?.item;
+  return [system, deadline && `${tx(language, 'Frist', 'Deadline')}: ${deadline}`, item && `${tx(language, 'je', 'per')} ${item}`]
     .filter((z): z is string => !!z?.trim())
     .flatMap((z) => wrap(z, 22));
 }
@@ -104,7 +115,9 @@ export function layout(ir: ProcessIR, previous: PositionMap = {}): PositionMap {
   // Otherwise it lands on the main line and the normal path has to dodge.
   const fromExceptionPath = (n: Node) =>
     ir.edges.some((e) => e.to === n.id && ir.nodes.find((x) => x.id === e.from)?.kind === 'exception');
-  const flow = ir.nodes.filter(isFlowNode).sort((a, b) => Number(fromExceptionPath(a)) - Number(fromExceptionPath(b)));
+  // Boxes of what can come at any time have no arrows: they get a row of their own below their lane.
+  const anytime = ir.nodes.filter((n): n is FlowNode => isAnytime(n));
+  const flow = ir.nodes.filter((n): n is FlowNode => isFlowNode(n) && !isAnytime(n)).sort((a, b) => Number(fromExceptionPath(a)) - Number(fromExceptionPath(b)));
 
   const byRank = new Map<number, FlowNode[]>();
   for (const n of flow) {
@@ -128,6 +141,18 @@ export function layout(ir: ProcessIR, previous: PositionMap = {}): PositionMap {
     }
     for (const [lane, count] of perLane)
       slotsPerLane.set(lane, Math.max(slotsPerLane.get(lane) ?? 1, count));
+  }
+  /** Per box: its lane, row (below every slot of the lane) and column (side by side from the left). */
+  const anyPlace = new Map<string, { lane: number; row: number; col: number }>();
+  const anyRow = new Map<number, number>();
+  for (const n of anytime) {
+    const lane = laneIndex.get(n.laneId ?? '') ?? 0;
+    if (!anyRow.has(lane)) anyRow.set(lane, flow.some((m) => (laneIndex.get(m.laneId ?? '') ?? 0) === lane) ? slotsPerLane.get(lane) ?? 1 : 0);
+    const row = anyRow.get(lane)!;
+    const col = [...anyPlace.values()].filter((a) => a.lane === lane).length;
+    anyPlace.set(n.id, { lane, row, col });
+    slotsPerLane.set(lane, row + 1);
+    heightPerLane.set(lane, Math.max(heightPerLane.get(lane) ?? 0, sizeOf(n).h));
   }
 
   const laneTop = new Map<number, number>();
@@ -154,8 +179,15 @@ export function layout(ir: ProcessIR, previous: PositionMap = {}): PositionMap {
 
   const place = (): PositionMap => {
     const positions: PositionMap = {};
+    // A box of what can come at any time is always placed anew: below everything else of its lane.
     for (const id of Object.keys(previous)) {
-      if (ir.nodes.some((n) => n.id === id)) positions[id] = { ...previous[id] };
+      if (ir.nodes.some((n) => n.id === id && !isAnytime(n))) positions[id] = { ...previous[id] };
+    }
+    for (const n of anytime) {
+      const a = anyPlace.get(n.id)!;
+      const size = sizeOf(n);
+      const centerY = (laneTop.get(a.lane) ?? Y0) + a.row * (laneTask.get(a.lane) ?? ROW) + 40;
+      positions[n.id] = { x: X0 + a.col * COL - size.w / 2, y: centerY - size.h / 2 };
     }
     for (const { lane, r, nodes } of groups.values())
       nodes.forEach((n, slot) => {
@@ -396,26 +428,81 @@ export const SMALL = 10.5;
 /** Line spacing of the small caption. */
 export const SMALL_LINE = 12.5;
 
+/** Width of a small caption, estimated (0.56 x font size per character). */
+const smallWidth = (z: string) => z.length * SMALL * 0.56;
+
+export type Caption = Box & { lines: string[]; anchor: 'start' | 'middle' | 'end' };
+
 /**
- * Where the caption of an exception or decision sits. Exception: left of the
- * centre axis, right-aligned. Arrows leave both vertically through the
- * centre - centred below, the text would lie right on the arrow.
- * - Exception: next to the circle, on the outer side of the task.
- * - Decision: centred above the diamond (rulebook).
+ * Where the caption of an exception or decision sits. Arrows are laid first; then
+ * the caption takes the first free place of a short list, so that no arrow runs
+ * through its text (the question used to sit centred above the diamond even when an
+ * arrow left it upwards).
+ * - Decision: centred above the diamond (rulebook), then above left / above right of
+ *   the axis, then the same three below the diamond.
+ * - Exception: next to the circle on the outer side of the task, left and
+ *   right-aligned first, then right; then the same two at the other height.
+ * Free = no arrow segment, no foreign node and no arrow caption of this node in the box.
+ * None free: the place with the fewest conflicts, the earlier one on a tie.
  * Here and not in the renderer, because the measurement needs the same box.
- * ponytail: width estimated (0.56 x font size per character); real
- * text width only once a font is embedded.
+ * ponytail: width estimated; real text width only once a font is embedded.
  */
-export function pagesCaption(ir: ProcessIR, n: Node, positions: PositionMap): (Box & { lines: string[] }) | undefined {
+export function pagesCaption(ir: ProcessIR, n: Node, positions: PositionMap): Caption | undefined {
   const q = positions[n.id];
   if ((n.kind !== 'exception' && n.kind !== 'gateway') || !n.name || !q) return undefined;
   const lines = wrap(n.name, 22);
-  const w = Math.max(...lines.map((z) => z.length)) * SMALL * 0.56;
+  const w = Math.max(...lines.map(smallWidth));
   const h = lines.length * SMALL_LINE;
-  // Question centred above the diamond, last baseline 8 above the tip (+3 descender).
-  if (n.kind === 'gateway') return { x: q.x + SIZE.gateway.w / 2 - w / 2, y: q.y - 8 + 3 - h, w, h, lines };
-  const middle = q.y + SIZE.exception.h / 2;
-  return { x: q.x - 4 - w, y: exceptionPathPage(ir, n, positions) === 'above' ? middle - 3 - h : middle + 3, w, h, lines };
+  const places: Caption[] = [];
+  const at = (x: number, y: number, anchor: Caption['anchor']) => places.push({ x, y, w, h, lines, anchor });
+  if (n.kind === 'gateway') {
+    const cx = q.x + SIZE.gateway.w / 2;
+    // Above: last baseline 8 above the tip (+3 descender). Below: 3 under the tip.
+    for (const y of [q.y - 8 + 3 - h, q.y + SIZE.gateway.h + 3]) {
+      at(cx - w / 2, y, 'middle');
+      at(cx - 6 - w, y, 'end');
+      at(cx + 6, y, 'start');
+    }
+  } else {
+    const middle = q.y + SIZE.exception.h / 2;
+    const above = middle - 3 - h, below = middle + 3;
+    for (const y of exceptionPathPage(ir, n, positions) === 'above' ? [above, below] : [below, above]) {
+      at(q.x - 4 - w, y, 'end');
+      at(q.x + SIZE.exception.w + 4, y, 'start');
+    }
+  }
+  if (places.length === 1) return places[0];
+
+  const segs = ir.edges.flatMap((e) => segments(edgePoints(ir, e, positions) ?? []));
+  const obstacles = [
+    ...ir.nodes.filter((o) => o.id !== n.id && positions[o.id]).flatMap((o) => [
+      { ...positions[o.id], ...sizeOf(o) },
+      ...documents(o, positions[o.id]).map((d) => d.box)
+    ]),
+    ...ir.edges.filter((e) => e.from === n.id && (e.name ?? e.condition)).flatMap((e) => {
+      const p = edgePoints(ir, e, positions);
+      return p && p.length > 1 ? [arrowCaptionBox(p, (e.name ?? e.condition)!)] : [];
+    })
+  ];
+  const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  let best = places[0], bestK = Infinity;
+  for (const c of places) {
+    const k = segs.filter(([a, b]) => inBox(a, b, c)).length + obstacles.filter((o) => overlaps(o, c)).length;
+    if (k === 0) return c;
+    if (k < bestK) (best = c), (bestK = k);
+  }
+  return best;
+}
+
+/** Box of an arrow's caption, placed as render.ts draws it: at its start, 8 apart. */
+function arrowCaptionBox(p: Position[], caption: string): Box {
+  const [a, b] = p;
+  const vertical = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+  const leftward = !vertical && b.x < a.x;
+  const x = vertical ? a.x + 7 : a.x + (leftward ? -8 : 8);
+  const baseline = vertical ? (b.y > a.y ? a.y + 15 : a.y - 8) : a.y - 8;
+  const w = smallWidth(caption);
+  return { x: leftward ? x - w : x, y: baseline - SMALL, w, h: SMALL + 3 };
 }
 
 function exceptionPathPage(ir: ProcessIR, ex: Node, positions: PositionMap): 'above' | 'below' {

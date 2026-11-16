@@ -123,3 +123,108 @@ test('document sits below the task in the lane, system and deadline in grey insi
   const lane = laneBands(res.ir, res.positions).find((b) => b.lane.id === task.laneId)!;
   assert.ok(d.box.y + d.box.h <= lane.y + lane.height, 'Dokument ragt aus der Bahn');
 });
+
+// --- 383: story line ↔ shape (data-move), lane bands for the standing names ---------
+
+import { readFileSync } from 'node:fs';
+import { tell, emptyProcess } from '../../src/core/index.js';
+import { preview, scene } from '../../src/core/render.js';
+import { textMoves } from '../../src/workbench.js';
+import type { Move } from '../../src/core/index.js';
+
+const README: Move[] = [
+  { move: 'start', text: 'Rechnung geht ein', role: 'Buchhaltung' },
+  { move: 'task', text: 'Rechnung prüfen', role: 'Buchhaltung' },
+  { move: 'decision', question: 'Betrag über 5000 €?', yes: 'ja', no: 'nein' },
+  { move: 'task', text: 'Zahlung freigeben', role: 'Führungskraft' },
+  { move: 'merge' },
+  { move: 'merge' },
+  { move: 'end', text: 'Bezahlt' }
+];
+const LONG = readFileSync('tests/core/fixtures/reklamation.txt', 'utf8');
+
+const told = async (moves: Move[]) => {
+  const g = tell(moves, 'de');
+  const e = await run({ ir: { ...emptyProcess('P', g.ir.name, 'de'), story: moves }, ops: g.ops });
+  return { g, e };
+};
+
+for (const [name, moves] of [['README', () => README], ['Reklamation', () => textMoves(LONG, [], 'de').moves]] as const) {
+  test(`383 AK2 ${name}: every node in exactly one <g data-move>, without option no groups`, async () => {
+    const ms = moves();
+    assert.ok(ms.length > 5);
+    const { g, e } = await told(ms);
+    const { svg } = preview(e.ir, e.positions, { moves: g.moveOf, withoutLegend: true, here: g.here });
+    const groups = [...svg.matchAll(/<g data-move="(\d+)" data-node="([^"]+)">/g)];
+    assert.equal(groups.length, e.ir.nodes.length);
+    assert.deepEqual(new Set(groups.map((m) => m[2])), new Set(e.ir.nodes.map((n) => n.id)));
+    for (const m of groups) assert.ok(Number(m[1]) >= 1 && Number(m[1]) <= ms.length, m[0]);
+    assert.equal((svg.match(/<g /g) ?? []).length, (svg.match(/<\/g>/g) ?? []).length);
+    assert.doesNotMatch(toSvg(e.ir, e.positions), /data-move/);
+  });
+}
+
+test('383 AK2 the long story reads back in full (31 moves)', () => {
+  const r = textMoves(LONG, [], 'de');
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.moves.length, 31);
+});
+
+test('383 AK3 moveOf: start, decision and the merge it triggers', () => {
+  const g = tell(README, 'de');
+  const kind = (id: string) => g.ir.nodes.find((n) => n.id === id)!;
+  const start = g.ir.nodes.find((n) => n.kind === 'start')!;
+  assert.equal(g.moveOf[start.id], 0);
+  const gws = g.ir.nodes.filter((n) => n.kind === 'gateway');
+  // The question's gateway comes from move 2, the merge point from a merge move (4 or 5).
+  const split = gws.find((n) => n.name === 'Betrag über 5000 €?')!;
+  assert.equal(g.moveOf[split.id], 2);
+  const join = gws.find((n) => n !== split)!;
+  assert.ok([4, 5].includes(g.moveOf[join.id]), String(g.moveOf[join.id]));
+  for (const n of g.ir.nodes) assert.ok(n.id in g.moveOf, kind(n.id).id);
+});
+
+test('383 AK4 scene lanes match the lane rectangles of the SVG', async () => {
+  const { g, e } = await told(README);
+  const s = scene(e.ir, e.positions, { withoutLegend: true });
+  assert.equal(s.lanes.length, e.ir.lanes.length);
+  assert.ok(s.pool);
+  const svg = toSvg(e.ir, e.positions, { withoutLegend: true });
+  for (const b of s.lanes) {
+    assert.match(svg, new RegExp(`<rect x="[\\d.]+" y="${Math.round(b.y * 10) / 10}" width="[\\d.]+" height="${Math.round(b.h * 10) / 10}"`));
+    assert.ok(svg.includes(`>${b.name}<`));
+  }
+  assert.ok(g.ir.lanes.length >= 2);
+});
+
+test('complaint story: questions sit off the lines, the same in scene, SVG and PDF', async () => {
+  const { complaintStory } = await import('./fixtures.js');
+  const { scene } = await import('../../src/core/render.js');
+  const { pagesCaption, edgePoints, segments, inBox } = await import('../../src/core/layout.js');
+  const r = await complaintStory();
+  const sc = scene(r.ir, r.positions);
+  const svg = toSvg(r.ir, r.positions);
+  for (const question of ['Mangel bestätigt?', 'Reparatur möglich?']) {
+    const n = r.ir.nodes.find((x) => x.kind === 'gateway' && x.name === question)!;
+    const b = pagesCaption(r.ir, n, r.positions)!;
+    const hits = r.ir.edges.filter((e) => segments(edgePoints(r.ir, e, r.positions) ?? []).some(([a, c]) => inBox(a, c, b)));
+    assert.deepEqual(hits.map((e) => e.id), [], question);
+    const texts = sc.prims.filter((p: any) => p.t === 'text' && p.s === question) as any[];
+    assert.equal(texts.length, 1, question);
+    const t = texts[0];
+    assert.equal(t.anchor, b.anchor);
+    // The drawn text starts, centres or ends on the box edge its anchor names (scene is shifted by a constant).
+    const ref = b.anchor === 'start' ? b.x : b.anchor === 'middle' ? b.x + b.w / 2 : b.x + b.w;
+    const shift = t.x - ref;
+    const other = sc.prims.find((p: any) => p.t === 'text' && p.s === 'Kaufbeleg vorhanden?') as any;
+    const k = r.ir.nodes.find((x) => x.name === 'Kaufbeleg vorhanden?')!;
+    const kb = pagesCaption(r.ir, k, r.positions)!;
+    assert.ok(Math.abs(other.x - (kb.x + kb.w / 2) - shift) < 0.01, 'same shift for every caption');
+    const m = [...svg.matchAll(/<text x="([\d.-]+)" y="([\d.-]+)"[^>]*text-anchor="(\w+)"[^>]*>([^<]*)</g)].filter((z) => z[4] === question);
+    assert.equal(m.length, 1, question);
+    assert.ok(Math.abs(Number(m[0][1]) - t.x) < 0.1 && Math.abs(Number(m[0][2]) - t.y) < 0.1, question);
+    assert.equal(m[0][3], t.anchor);
+  }
+  const pdf = await toPdf(r.ir, r.positions);
+  assert.equal(Buffer.from(pdf.slice(0, 5)).toString(), '%PDF-');
+});

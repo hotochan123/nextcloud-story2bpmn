@@ -1,5 +1,7 @@
 # The tool is a workshop, not a process portal
 
+Partly replaced on 12 Nov 2026 by `0006-approval-through-nextcloud.md`: approval, valid versions and proposals now run through Nextcloud. The rest stands.
+
 Settled on 11 Sep 2026. Collaboration is asynchronous: an author builds the draft, the involved parties contribute changes, and the process owner approves. The obvious move would have been to model this flow in the tool (versions, proposals, an approval workflow, a reading view for all employees).
 
 The decision went the other way: the tool covers only the conversion: process description in, draft out, refine in conversation with the AI, out as a BPMN working file and as PDF/image. Approval, versions and proposals happen outside; people look things up in the CRM, to which the approved version is transferred by hand. Reason: this workflow part is a standard feature of finished process management products (ADONIS, SAP Signavio, ARIS) and would be by far the biggest chunk to build ourselves, with no value of its own.

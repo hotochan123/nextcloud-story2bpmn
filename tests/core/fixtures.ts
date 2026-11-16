@@ -143,3 +143,17 @@ export const unknownLaneOps: Op[] = [
     }
   }
 ];
+
+// Job 382: the long complaint story of the design handover (31 moves, 5 lanes), read from its story text.
+export async function complaintStory() {
+  const { readFileSync } = await import('node:fs');
+  const { read } = await import('../../src/core/readBack.js');
+  const { tell } = await import('../../src/core/story.js');
+  const { run, emptyProcess } = await import('../../src/core/pipeline.js');
+  const text = readFileSync(new URL('./fixtures/complaint-story.txt', import.meta.url), 'utf8');
+  const parsed = read(text);
+  if (parsed.errors.length) throw new Error(parsed.errors.join('; '));
+  const r = await run({ ir: emptyProcess('P', 'Reklamation'), ops: tell(parsed.moves).ops });
+  if (!r.ok) throw new Error('complaint story does not build');
+  return r;
+}

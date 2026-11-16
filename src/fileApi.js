@@ -32,7 +32,8 @@ export const load = (id) => call(() => axios.get(api('/' + id)))
 export const save = (id, content, { etag, hash }, force = false) => call(() => axios.put(api('/' + id), { content, etag, hash, force }))
 export const put = (folderId, name, content) => call(() => axios.post(api(), { folderId, name, content }))
 // Put the reading copy (PDF bytes) next to the working file; folder and name are decided by the server.
-export const publish = (id, pdf) => call(() => axios.put(api('/' + id + '/reading-copy'), { content: base64(pdf) }))
+// A draft (while a valid version exists) gets its own name, "<name> (Entwurf).pdf".
+export const publish = (id, pdf, { draft = false, language = 'de' } = {}) => call(() => axios.put(api('/' + id + '/reading-copy'), { content: base64(pdf), draft, language }))
 
 /** Bytes as Base64, in chunks (String.fromCharCode with too many arguments throws). */
 export function base64(bytes) {

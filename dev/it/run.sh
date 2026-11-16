@@ -8,6 +8,7 @@
 #   FAIL <db>: <label>                 one per failed check
 #   Integration <db> <ok>/<failed>     per database
 #   Integration <ok>/<failed>          last line with DB=all: the sum
+#   E2E <ok>/<failed>                  with E2E=1 instead: browser cases of dev/e2e/phone.mjs (check e2e-phone)
 # Exit 0 without failures, 1 with at least one, 2 when the run could not be set up.
 # Diagnostics (what is happening right now) go to stderr.
 #
@@ -17,6 +18,12 @@
 #   APP_SRC=<checkout>           source of the app (default: the checkout of this script)
 #   KEEP=1                       leave containers and the work directory in place
 #   STORY2BPMN_IT_PREFIX=story2bpmn-it- container prefix (the process id is appended)
+#   E2E=1                        browser cases instead of the API scenarios (DB=sqlite only): Playwright
+#                                (image mcr.microsoft.com/playwright:v1.49.1-jammy) in the network namespace of
+#                                the Nextcloud container opens http://localhost; playwright-core lives in the
+#                                Docker volume story2bpmn-e2e-node-1.49.1 (npm ci of dev/e2e once)
+#   E2E_SHOTS=<dir>              copy the screenshots of the browser run there
+#   E2E_ONLY=<case>,…            with E2E=1: only these browser cases (names of dev/e2e/phone.mjs)
 #
 # Never against the production instance: the runner only ever creates and removes its own containers
 # <prefix><pid>, <prefix><pid>-db and <prefix><pid>-redis.
@@ -39,7 +46,7 @@ ADMIN_PW="$(pw)"
 USER_PW="$(pw)"
 DB_PW="$(pw)"
 REDIS_PW="$(pw)"
-USERS=(alice bob)
+USERS=(alice bob carol)
 
 info() { echo "  · [$DB] $*" >&2; }
 
@@ -50,7 +57,7 @@ cleanup() {
 	elif [[ "$KEEP" == 1 ]]; then
 		echo "KEEP=1: containers $C, $C-redis (and $C-db) are kept" >&2
 	else
-		docker rm -fv "$C" "$C-db" "$C-redis" >/dev/null 2>&1 || true
+		docker rm -fv "$C-browser" "$C" "$C-db" "$C-redis" >/dev/null 2>&1 || true
 	fi
 	if [[ "$KEEP" != 1 && $rc -eq 0 ]]; then
 		rm -rf "${WORK:?}"
@@ -59,13 +66,16 @@ cleanup() {
 	fi
 }
 trap cleanup EXIT
+E2E="${E2E:-0}"
+[[ "$E2E" != 1 || "$DB" == sqlite ]] || { echo "E2E=1 runs with DB=sqlite only" >&2; exit 2; }
 trap 'exit 130' INT TERM
 
 occ() { docker exec -u www-data "$C" php occ "$@"; }
 ip_of() { docker inspect "$1" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' | awk '{print $1}'; }
 
 build_js_if_needed() {
-	compgen -G "$APP_SRC/js/*.js" >/dev/null && return 0
+	# the bundles are *.mjs files: without them every parallel child would build js/ at once
+	compgen -G "$APP_SRC/js/*.mjs" >/dev/null && return 0
 	echo "  · js/ has no bundles: npm run build" >&2
 	(cd "$APP_SRC" && npm run build) >"$WORK/js-build.txt" 2>&1 \
 		|| { echo "js build failed, see $WORK/js-build.txt" >&2; exit 2; }
@@ -152,6 +162,7 @@ setup() {
 	install_app
 	add_user alice
 	add_user bob
+	add_user carol
 }
 
 # Right after app:enable the web server may still answer the app's routes with 404 for a few seconds.
@@ -199,6 +210,45 @@ run_one() {
 	return $rc
 }
 
+# E2E=1: the browser cases of dev/e2e/phone.mjs against this Nextcloud, from inside its network namespace.
+PW_IMAGE=mcr.microsoft.com/playwright:v1.49.1-jammy
+PW_VOLUME=story2bpmn-e2e-node-1.49.1
+run_e2e() {
+	local rc=0 line
+	docker image inspect "$PW_IMAGE" >/dev/null 2>&1 || docker pull -q "$PW_IMAGE" >/dev/null 2>&1 \
+		|| { echo "image $PW_IMAGE missing and cannot be pulled" >&2; exit 2; }
+	if ! docker run --rm -v "$PW_VOLUME:/deps" "$PW_IMAGE" test -f /deps/node_modules/playwright-core/package.json; then
+		info "filling volume $PW_VOLUME (npm ci)"
+		docker run --rm -v "$PW_VOLUME:/deps" -v "$REPO/dev/e2e:/src:ro" -e PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 "$PW_IMAGE" \
+			sh -c 'cp /src/package.json /src/package-lock.json /deps/ && cd /deps && npm ci --no-audit --no-fund' >&2 \
+			|| { echo "npm ci of playwright-core failed" >&2; exit 2; }
+	fi
+	# the welcome dialog of a fresh account would lie over the app
+	occ app:disable firstrunwizard >/dev/null 2>&1 || true
+	mkdir -p "$WORK/shots"
+	chmod 777 "$WORK/shots"
+	info "Nextcloud up after $((SECONDS - STARTED)) s, browser cases against http://localhost"
+	docker run --rm --init --name "$C-browser" --network "container:$C" --shm-size=1g \
+		-v "$REPO/dev/e2e:/work:ro" -v "$PW_VOLUME:/deps:ro" -v "$WORK/shots:/out" \
+		-v "$REPO/dev/screenshots/invoice-approval.bpmn:/data/example.bpmn:ro" \
+		-e S2B_E2E_URL=http://localhost -e S2B_E2E_USER=alice -e S2B_E2E_PASS="$USER_PW" \
+		-e S2B_E2E_PW=/deps/node_modules/playwright-core/index.mjs -e S2B_E2E_OUT=/out -e S2B_E2E_FILE=/data/example.bpmn -e S2B_E2E_ONLY="${E2E_ONLY:-}" \
+		-w /work "$PW_IMAGE" node /work/phone.mjs >"$WORK/e2e.txt" 2>&1 || rc=$?
+	grep -E '^(ok|FAIL) ' "$WORK/e2e.txt" || true
+	line=$(grep -E '^E2E [0-9]+/[0-9]+$' "$WORK/e2e.txt" | tail -n1 || true)
+	if [[ -n "${E2E_SHOTS:-}" ]]; then
+		mkdir -p "$E2E_SHOTS"
+		cp "$WORK"/shots/*.png "$E2E_SHOTS"/ 2>/dev/null || true
+	fi
+	if [[ -z "$line" ]]; then
+		echo "FAIL e2e: browser run ended without totals: $(tail -n1 "$WORK/e2e.txt" || true)"
+		echo "E2E 0/1"
+		return 1
+	fi
+	echo "$line"
+	[[ $rc == 0 ]]
+}
+
 # DB=all: the four databases in parallel, each a child run of this script with its own prefix and log;
 # their lines in a fixed order, then the sum. A child without a result line counts as one failure.
 run_all() {
@@ -234,4 +284,10 @@ if [[ "$DB" == all ]]; then
 	exit
 fi
 build_js_if_needed
+if [[ "$E2E" == 1 ]]; then
+	setup
+	wait_routes "$(ip_of "$C")"
+	run_e2e
+	exit
+fi
 run_one

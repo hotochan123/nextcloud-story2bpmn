@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bpmnc="urn:bpmn-core:geschichte" xmlns:s2b="urn:story2bpmn:freigabe" id="Definitions_P" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-core" exporterVersion="1" xml:lang="de" bpmnc:geschichte="[{&#34;zug&#34;:&#34;start&#34;,&#34;text&#34;:&#34;Bestellung „Müller &#38; Söhne“ geht ein&#34;,&#34;stelle&#34;:&#34;Vertrieb/Innendienst&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Preis prüfen &#60;50 € 😀&#34;,&#34;stelle&#34;:&#34;Leitung&#34;,&#34;system&#34;:&#34;ERP \&#34;alt\&#34;&#34;,&#34;frist&#34;:&#34;2\\3 Tage&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Erledigt&#34;}]" s2b:freigabe="{&#34;status&#34;:&#34;gueltig&#34;,&#34;verantwortlich&#34;:{&#34;uid&#34;:&#34;petra&#34;,&#34;name&#34;:&#34;Petra&#34;},&#34;ersteller&#34;:{&#34;uid&#34;:&#34;jonas&#34;,&#34;name&#34;:&#34;Jonas&#34;},&#34;gueltig&#34;:{&#34;nummer&#34;:3,&#34;datum&#34;:&#34;2026-11-14T10:00:00.000Z&#34;,&#34;von&#34;:{&#34;uid&#34;:&#34;petra&#34;,&#34;name&#34;:&#34;Petra&#34;},&#34;sprache&#34;:&#34;de&#34;,&#34;geschichte&#34;:[{&#34;zug&#34;:&#34;start&#34;,&#34;text&#34;:&#34;Bestellung „Müller &#38; Söhne“ geht ein&#34;,&#34;stelle&#34;:&#34;Vertrieb/Innendienst&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;Preis prüfen &#60;50 € 😀&#34;,&#34;stelle&#34;:&#34;Leitung&#34;,&#34;system&#34;:&#34;ERP \&#34;alt\&#34;&#34;,&#34;frist&#34;:&#34;2\\3 Tage&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Erledigt&#34;}]},&#34;entschieden&#34;:[],&#34;schlagwort&#34;:false}">
+  <bpmn:collaboration id="P_collaboration">
+    <bpmn:participant id="P_pool" name="Prozess" processRef="P" />
+  </bpmn:collaboration>
+  <bpmn:process id="P" name="Prozess" isExecutable="false">
+    <bpmn:laneSet id="P_lanes">
+      <bpmn:lane id="Bahn_1" name="Vertrieb/Innendienst">
+        <bpmn:flowNodeRef>Start_1</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="Bahn_2" name="Leitung">
+        <bpmn:flowNodeRef>Schritt_2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_3</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_1" name="Bestellung „Müller &#38; Söhne“ geht ein">
+      <bpmn:outgoing>f_Start_1__Schritt_2</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:task id="Schritt_2" name="Preis prüfen &#60;50 € 😀">
+      <bpmn:documentation>System: ERP "alt"
+Frist: 2\3 Tage</bpmn:documentation>
+      <bpmn:incoming>f_Start_1__Schritt_2</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_2__Ende_3</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:endEvent id="Ende_3" name="Erledigt">
+      <bpmn:incoming>f_Schritt_2__Ende_3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_Start_1__Schritt_2" sourceRef="Start_1" targetRef="Schritt_2" />
+    <bpmn:sequenceFlow id="f_Schritt_2__Ende_3" sourceRef="Schritt_2" targetRef="Ende_3" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="P_diagram">
+    <bpmndi:BPMNPlane id="P_plane" bpmnElement="P_collaboration">
+      <bpmndi:BPMNShape id="P_pool_di" bpmnElement="P_pool" isHorizontal="true">
+        <dc:Bounds x="52" y="62" width="606" height="359" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_1_di" bpmnElement="Bahn_1" isHorizontal="true">
+        <dc:Bounds x="82" y="62" width="576" height="159" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_2_di" bpmnElement="Bahn_2" isHorizontal="true">
+        <dc:Bounds x="82" y="221" width="576" height="200" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="142" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_2_di" bpmnElement="Schritt_2">
+        <dc:Bounds x="280" y="300" width="140" height="81" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_3_di" bpmnElement="Ende_3">
+        <dc:Bounds x="522" y="322" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_Start_1__Schritt_2_di" bpmnElement="f_Start_1__Schritt_2">
+        <di:waypoint x="160" y="138" />
+        <di:waypoint x="160" y="340" />
+        <di:waypoint x="280" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_2__Ende_3_di" bpmnElement="f_Schritt_2__Ende_3">
+        <di:waypoint x="420" y="340" />
+        <di:waypoint x="522" y="340" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

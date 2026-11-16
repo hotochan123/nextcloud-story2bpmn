@@ -377,9 +377,9 @@ test('end with message and abort everything: only next to parallel work, valid B
   assert.ok(g.storyText.some((l) => l.text === 'ENDE, alles abbrechen: [Abgelehnt].'));
   assert.ok(g.storyText.some((l) => l.text === 'ENDE mit Nachricht: [Eingeladen].'));
   // Abort only where something runs in parallel.
-  assert.deepEqual(tell(moves.slice(0, 3)).endKinds, ['', 'message', 'cancel']);
+  assert.deepEqual(tell(moves.slice(0, 3)).endKinds, ['', 'message', 'signal', 'cancel']);
   const alone = [moves[0], { move: 'task', text: 'Prüfen', role: 'Personal' }] as Move[];
-  assert.deepEqual(tell(alone).endKinds, ['', 'message']);
+  assert.deepEqual(tell(alone).endKinds, ['', 'message', 'signal']);
   assert.equal(tell([...alone, { move: 'end', text: 'X', subtype: 'cancel' }]).errors.length, 1);
 
   const r = await run({ ir: emptyProcess('P', 'Bewerbung'), ops: g.ops });

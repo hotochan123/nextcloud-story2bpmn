@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { tell, Move } from '../../src/core/story.js';
 import { run, emptyProcess } from '../../src/core/pipeline.js';
 import { measureOne } from '../../src/core/readability.js';
+import { complaintStory } from './fixtures.js';
 
 const vacation: Move[] = [
   { move: 'start', text: 'Mitarbeiter möchte Urlaub nehmen', role: 'Mitarbeiter' },
@@ -65,4 +66,41 @@ test('invoice example: no crossings', async () => {
     { ...m, bends: m.bends <= 6 },
     { crossings: 0, throughBox: 0, overlaid: 0, mainPathCrooked: 1, throughCaption: 0, bends: true }
   );
+});
+
+// Job 382: the long complaint story (31 moves, 5 lanes). Arrows leave "Mangel bestätigt?" and
+// "Reparatur möglich?" upwards; the question used to sit centred above the diamond, right on the line.
+test('complaint story: no arrow runs through a question or exception caption', async () => {
+  const r = await complaintStory();
+  assert.equal(measureOne(r.ir, r.positions).throughCaption, 0);
+});
+
+test('no conflict: the question stays centred above the diamond', async () => {
+  const { pagesCaption, SIZE } = await import('../../src/core/layout.js');
+  for (const moves of [vacation, invoice]) {
+    const r = await run({ ir: emptyProcess('P', 'P'), ops: tell(moves).ops });
+    const gateways = r.ir.nodes.filter((n) => n.kind === 'gateway' && n.name);
+    assert.ok(gateways.length > 0);
+    for (const n of gateways) {
+      const b = pagesCaption(r.ir, n, r.positions)!;
+      const q = r.positions[n.id];
+      assert.equal(b.anchor, 'middle', n.name);
+      assert.ok(Math.abs(b.x + b.w / 2 - (q.x + SIZE.gateway.w / 2)) < 0.01);
+      assert.ok(Math.abs(b.y + b.h - (q.y - 5)) < 0.01);
+    }
+  }
+});
+
+test('a two-line question finds a free place when an arrow leaves the diamond upwards', async () => {
+  const { pagesCaption, edgePoints, segments, inBox } = await import('../../src/core/layout.js');
+  const { read } = await import('../../src/core/readBack.js');
+  const { readFileSync } = await import('node:fs');
+  const text = readFileSync(new URL('./fixtures/complaint-story.txt', import.meta.url), 'utf8')
+    .replace('[?Mangel bestätigt]', '[?Ist der Mangel wirklich bestätigt]');
+  const r = await run({ ir: emptyProcess('P', 'P'), ops: tell(read(text).moves).ops });
+  const n = r.ir.nodes.find((x) => x.kind === 'gateway' && x.name?.startsWith('Ist der Mangel'))!;
+  const b = pagesCaption(r.ir, n, r.positions)!;
+  assert.equal(b.lines.length, 2);
+  const hits = r.ir.edges.filter((e) => segments(edgePoints(r.ir, e, r.positions) ?? []).some(([a, c]) => inBox(a, c, b)));
+  assert.deepEqual(hits.map((e) => e.id), []);
 });

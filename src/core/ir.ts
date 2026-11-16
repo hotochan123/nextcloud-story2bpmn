@@ -1,11 +1,13 @@
 import type { Language } from './language.js';
+import type { Approval } from './approval.js';
 
 export type Lane = { id: string; name: string };
 
 /** What makes an event occur (ADR 0005): a message arrives, or a time is reached. */
 /** condition: a condition occurs (BPMN Conditional), e.g. "Lager unter Mindestbestand". */
-export type EventKind = 'message' | 'time' | 'condition';
-export type EndKind = 'message' | 'cancel';
+/** signal: a notice to everyone (BPMN Signal), e.g. "Lieferstopp ausgerufen"; same name = same signal. */
+export type EventKind = 'message' | 'time' | 'condition' | 'signal';
+export type EndKind = 'message' | 'cancel' | 'signal';
 
 /** Business extra details on a task. All optional. */
 export type Details = {
@@ -22,7 +24,12 @@ export type Node =
   | { id: string; kind: 'wait'; name: string; laneId?: string; subtype?: EventKind }
   /** subtype: a message goes out, or everything is cancelled (also what runs in parallel). Without = plain end. */
   | { id: string; kind: 'end'; name: string; laneId?: string; subtype?: EndKind }
-  | { id: string; kind: 'step'; name: string; laneId?: string; details?: Details }
+  /** Sending on the way (throwing intermediate event): a signal goes out. subtype is missing only in foreign files. */
+  | { id: string; kind: 'send'; name: string; laneId?: string; subtype?: 'signal' }
+  /** subprocess: the flow behind the task (drawn collapsed, own diagram plane). Its IDs carry the prefix `<step id>_`. */
+  /** forEach: the step runs once per item (BPMN multi-instance); parallel = all at once, otherwise one after another. */
+  /** anytime: the box is an event subprocess (no arrows): its flow can start at any time during the process. */
+  | { id: string; kind: 'step'; name: string; laneId?: string; details?: Details; subprocess?: SubFlow; forEach?: ForEach; anytime?: Anytime }
   | {
       id: string;
       kind: 'gateway';
@@ -42,6 +49,15 @@ export type Node =
       /** The task keeps running, this path is added (BPMN: non-interrupting, dashed). Never for an error. */
       keepsRunning?: boolean;
     };
+
+/** A step that runs per item: what it runs for ("Rechnungsposition"), and whether all at once. */
+export type ForEach = { item: string; parallel?: true };
+
+/** What can come at any time (BPMN event subprocess): its trigger, and whether the process keeps running (non-interrupting). */
+export type Anytime = { trigger: EventKind; keepsRunning?: true };
+
+/** The flow behind a task (subprocess): one level only, so its nodes never carry a subprocess themselves. */
+export type SubFlow = { lanes: Lane[]; nodes: Node[]; edges: Edge[]; openPoints?: OpenPoint[] };
 
 export type Edge = {
   id: string;
@@ -83,6 +99,8 @@ export type ProcessIR = {
   /** The moves the diagram was told from (see story.ts).
    *  They are kept in the working file so the story can be continued later. */
   story?: unknown[];
+  /** Approval state (src/core/approval.ts), stored next to the story in the working file. */
+  approval?: Approval;
   /** Plain text for the whole process (the story text). Stored in <bpmn:documentation> on the process. */
   description?: string;
 };
@@ -156,3 +174,42 @@ export function edgeId(ir: ProcessIR, from: string, to: string): string {
 }
 
 export const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
+
+export type SubStep = Extract<Node, { kind: 'step' }> & { subprocess: SubFlow };
+export const hasSubprocess = (n: Node): n is SubStep => n.kind === 'step' && !!n.subprocess;
+/** A box of something that can come at any time: not part of the sequence flow. */
+export const isAnytime = (n: Node): boolean => n.kind === 'step' && !!n.anytime;
+
+/** The flow behind a step as a process of its own (shares the arrays: changes reach the step). */
+export const subIR = (parent: ProcessIR, step: SubStep): ProcessIR => ({
+  id: step.id,
+  name: step.name,
+  version: parent.version,
+  lanes: step.subprocess.lanes,
+  nodes: step.subprocess.nodes,
+  edges: step.subprocess.edges,
+  ...(step.subprocess.openPoints ? { openPoints: step.subprocess.openPoints } : {}),
+  ...(parent.language ? { language: parent.language } : {})
+});
+
+/** The levels of a process: the main flow first, then the flow behind each step, in node order; each flow
+ *  behind a step is followed by the levels inside it (what can come at any time while a subprocess runs). */
+export const levels = (ir: ProcessIR): ProcessIR[] => [ir, ...ir.nodes.filter(hasSubprocess).flatMap((n) => levels(subIR(ir, n)))];
+
+/** IDs of a flow with a prefix, so that main flow and subprocess share one file without clashes. */
+export function prefixed(ir: Pick<ProcessIR, 'lanes' | 'nodes' | 'edges' | 'openPoints'>, prefix: string): SubFlow {
+  const p = (id: string) => `${prefix}_${id}`;
+  return clone({
+    lanes: ir.lanes.map((l) => ({ ...l, id: p(l.id) })),
+    nodes: ir.nodes.map((n) => ({
+      ...n,
+      id: p(n.id),
+      ...('laneId' in n && n.laneId ? { laneId: p(n.laneId) } : {}),
+      ...(n.kind === 'exception' ? { attachedTo: p(n.attachedTo) } : {}),
+      // A flow nested in it (what can come at any time in a subprocess) gets the prefix too.
+      ...(n.kind === 'step' && n.subprocess ? { subprocess: prefixed(n.subprocess, prefix) } : {})
+    })) as Node[],
+    edges: ir.edges.map((e) => ({ ...e, id: p(e.id), from: p(e.from), to: p(e.to) })),
+    ...(ir.openPoints?.length ? { openPoints: ir.openPoints.map((o) => ({ ...o, id: p(o.id), ...(o.elementId ? { elementId: p(o.elementId) } : {}) })) } : {})
+  });
+}

@@ -1,0 +1,312 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bpmnc="urn:bpmn-core:geschichte" id="Definitions_P" targetNamespace="http://bpmn.io/schema/bpmn" exporter="bpmn-core" exporterVersion="1" xml:lang="de" bpmnc:geschichte="[{&#34;zug&#34;:&#34;start&#34;,&#34;text&#34;:&#34;Antrag&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;gleichzeitig&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;A1&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;B&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Z&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;weiter&#34;,&#34;ziel&#34;:&#34;Schritt_3&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Vollständig&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Eilig&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Abgelehnt&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Betrag hoch&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;Kunde bekannt&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Info A&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;Info B&#34;},{&#34;zug&#34;:&#34;zusammen&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;T1&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;schritt&#34;,&#34;text&#34;:&#34;T2&#34;,&#34;stelle&#34;:&#34;Team&#34;},{&#34;zug&#34;:&#34;wenn&#34;,&#34;frage&#34;:&#34;R&#34;,&#34;ja&#34;:&#34;ja&#34;,&#34;nein&#34;:&#34;nein&#34;},{&#34;zug&#34;:&#34;ende&#34;,&#34;text&#34;:&#34;E&#34;},{&#34;zug&#34;:&#34;weiter&#34;,&#34;ziel&#34;:&#34;Schritt_16&#34;}]">
+  <bpmn:collaboration id="P_collaboration">
+    <bpmn:participant id="P_pool" name="Prozess" processRef="P" />
+  </bpmn:collaboration>
+  <bpmn:process id="P" name="Prozess" isExecutable="false">
+    <bpmn:laneSet id="P_lanes">
+      <bpmn:lane id="Bahn_1" name="Team">
+        <bpmn:flowNodeRef>Start_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Gleichzeitig_2</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_3</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_4</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Zusammen_5</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_6</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Zusammen_7</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_8</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_9</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_10</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_11</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_12</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_13</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_14</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_15</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Schritt_16</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Wenn_17</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Ende_18</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Zusammen_19</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:startEvent id="Start_1" name="Antrag">
+      <bpmn:outgoing>f_Start_1__Gleichzeitig_2</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:parallelGateway id="Gleichzeitig_2">
+      <bpmn:incoming>f_Start_1__Gleichzeitig_2</bpmn:incoming>
+      <bpmn:outgoing>f_Gleichzeitig_2__Schritt_3</bpmn:outgoing>
+      <bpmn:outgoing>f_Gleichzeitig_2__Schritt_4</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:task id="Schritt_3" name="A1">
+      <bpmn:incoming>f_Zusammen_7__Schritt_3</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_3__Zusammen_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Schritt_4" name="B">
+      <bpmn:incoming>f_Gleichzeitig_2__Schritt_4</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_4__Zusammen_5</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:parallelGateway id="Zusammen_5">
+      <bpmn:incoming>f_Schritt_3__Zusammen_5</bpmn:incoming>
+      <bpmn:incoming>f_Schritt_4__Zusammen_5</bpmn:incoming>
+      <bpmn:outgoing>f_Zusammen_5__Wenn_6</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:exclusiveGateway id="Wenn_6" name="Z" default="f_Wenn_6__Wenn_8">
+      <bpmn:incoming>f_Zusammen_5__Wenn_6</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_6__Zusammen_7</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_6__Wenn_8</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Zusammen_7">
+      <bpmn:incoming>f_Gleichzeitig_2__Schritt_3</bpmn:incoming>
+      <bpmn:incoming>f_Wenn_6__Zusammen_7</bpmn:incoming>
+      <bpmn:outgoing>f_Zusammen_7__Schritt_3</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_8" name="Vollständig" default="f_Wenn_8__Wenn_11">
+      <bpmn:incoming>f_Wenn_6__Wenn_8</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_8__Wenn_9</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_8__Wenn_11</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_9" name="Eilig">
+      <bpmn:incoming>f_Wenn_8__Wenn_9</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_9__Ende_10</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_10" name="Abgelehnt">
+      <bpmn:incoming>f_Wenn_9__Ende_10</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Wenn_11" name="Betrag hoch" default="f_Wenn_11__Wenn_12">
+      <bpmn:incoming>f_Wenn_8__Wenn_11</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_11__Wenn_12</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_11__Schritt_15</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:exclusiveGateway id="Wenn_12" name="Kunde bekannt" default="f_Wenn_12__Ende_14">
+      <bpmn:incoming>f_Wenn_11__Wenn_12</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_12__Ende_13</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_12__Ende_14</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_13" name="Info A">
+      <bpmn:incoming>f_Wenn_12__Ende_13</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="Ende_14" name="Info B">
+      <bpmn:incoming>f_Wenn_12__Ende_14</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:task id="Schritt_15" name="T1">
+      <bpmn:incoming>f_Wenn_11__Schritt_15</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_15__Schritt_16</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:task id="Schritt_16" name="T2">
+      <bpmn:incoming>f_Zusammen_19__Schritt_16</bpmn:incoming>
+      <bpmn:outgoing>f_Schritt_16__Wenn_17</bpmn:outgoing>
+    </bpmn:task>
+    <bpmn:exclusiveGateway id="Wenn_17" name="R" default="f_Wenn_17__Zusammen_19">
+      <bpmn:incoming>f_Schritt_16__Wenn_17</bpmn:incoming>
+      <bpmn:outgoing>f_Wenn_17__Ende_18</bpmn:outgoing>
+      <bpmn:outgoing>f_Wenn_17__Zusammen_19</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:endEvent id="Ende_18" name="E">
+      <bpmn:incoming>f_Wenn_17__Ende_18</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:exclusiveGateway id="Zusammen_19">
+      <bpmn:incoming>f_Schritt_15__Schritt_16</bpmn:incoming>
+      <bpmn:incoming>f_Wenn_17__Zusammen_19</bpmn:incoming>
+      <bpmn:outgoing>f_Zusammen_19__Schritt_16</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_Start_1__Gleichzeitig_2" sourceRef="Start_1" targetRef="Gleichzeitig_2" />
+    <bpmn:sequenceFlow id="f_Gleichzeitig_2__Schritt_3" sourceRef="Gleichzeitig_2" targetRef="Zusammen_7" />
+    <bpmn:sequenceFlow id="f_Gleichzeitig_2__Schritt_4" sourceRef="Gleichzeitig_2" targetRef="Schritt_4" />
+    <bpmn:sequenceFlow id="f_Schritt_3__Zusammen_5" sourceRef="Schritt_3" targetRef="Zusammen_5" />
+    <bpmn:sequenceFlow id="f_Schritt_4__Zusammen_5" sourceRef="Schritt_4" targetRef="Zusammen_5" />
+    <bpmn:sequenceFlow id="f_Zusammen_5__Wenn_6" sourceRef="Zusammen_5" targetRef="Wenn_6" />
+    <bpmn:sequenceFlow id="f_Zusammen_7__Schritt_3" sourceRef="Zusammen_7" targetRef="Schritt_3" />
+    <bpmn:sequenceFlow id="f_Wenn_6__Zusammen_7" name="ja" sourceRef="Wenn_6" targetRef="Zusammen_7">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_6__Wenn_8" name="nein" sourceRef="Wenn_6" targetRef="Wenn_8" />
+    <bpmn:sequenceFlow id="f_Wenn_8__Wenn_9" name="ja" sourceRef="Wenn_8" targetRef="Wenn_9">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_9__Ende_10" name="ja" sourceRef="Wenn_9" targetRef="Ende_10">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_8__Wenn_11" name="nein" sourceRef="Wenn_8" targetRef="Wenn_11" />
+    <bpmn:sequenceFlow id="f_Wenn_11__Wenn_12" name="nein" sourceRef="Wenn_11" targetRef="Wenn_12" />
+    <bpmn:sequenceFlow id="f_Wenn_12__Ende_13" name="ja" sourceRef="Wenn_12" targetRef="Ende_13">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Wenn_12__Ende_14" name="nein" sourceRef="Wenn_12" targetRef="Ende_14" />
+    <bpmn:sequenceFlow id="f_Wenn_11__Schritt_15" name="ja" sourceRef="Wenn_11" targetRef="Schritt_15">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Schritt_15__Schritt_16" sourceRef="Schritt_15" targetRef="Zusammen_19" />
+    <bpmn:sequenceFlow id="f_Schritt_16__Wenn_17" sourceRef="Schritt_16" targetRef="Wenn_17" />
+    <bpmn:sequenceFlow id="f_Wenn_17__Ende_18" name="ja" sourceRef="Wenn_17" targetRef="Ende_18">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">ja</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_Zusammen_19__Schritt_16" sourceRef="Zusammen_19" targetRef="Schritt_16" />
+    <bpmn:sequenceFlow id="f_Wenn_17__Zusammen_19" name="nein" sourceRef="Wenn_17" targetRef="Zusammen_19" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="P_diagram">
+    <bpmndi:BPMNPlane id="P_plane" bpmnElement="P_collaboration">
+      <bpmndi:BPMNShape id="P_pool_di" bpmnElement="P_pool" isHorizontal="true">
+        <dc:Bounds x="52" y="40" width="2506" height="365" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Bahn_1_di" bpmnElement="Bahn_1" isHorizontal="true">
+        <dc:Bounds x="82" y="40" width="2476" height="365" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Start_1_di" bpmnElement="Start_1">
+        <dc:Bounds x="142" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Gleichzeitig_2_di" bpmnElement="Gleichzeitig_2" isMarkerVisible="true">
+        <dc:Bounds x="325" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_3_di" bpmnElement="Schritt_3">
+        <dc:Bounds x="660" y="80" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_4_di" bpmnElement="Schritt_4">
+        <dc:Bounds x="470" y="190" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Zusammen_5_di" bpmnElement="Zusammen_5" isMarkerVisible="true">
+        <dc:Bounds x="895" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_6_di" bpmnElement="Wenn_6" isMarkerVisible="true">
+        <dc:Bounds x="1085" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Zusammen_7_di" bpmnElement="Zusammen_7" isMarkerVisible="true">
+        <dc:Bounds x="515" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_8_di" bpmnElement="Wenn_8" isMarkerVisible="true">
+        <dc:Bounds x="1275" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_9_di" bpmnElement="Wenn_9" isMarkerVisible="true">
+        <dc:Bounds x="1465" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_10_di" bpmnElement="Ende_10">
+        <dc:Bounds x="1662" y="322" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_11_di" bpmnElement="Wenn_11" isMarkerVisible="true">
+        <dc:Bounds x="1465" y="205" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_12_di" bpmnElement="Wenn_12" isMarkerVisible="true">
+        <dc:Bounds x="1655" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_13_di" bpmnElement="Ende_13">
+        <dc:Bounds x="1852" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_14_di" bpmnElement="Ende_14">
+        <dc:Bounds x="1852" y="212" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_15_di" bpmnElement="Schritt_15">
+        <dc:Bounds x="1610" y="190" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Schritt_16_di" bpmnElement="Schritt_16">
+        <dc:Bounds x="1990" y="80" width="140" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Wenn_17_di" bpmnElement="Wenn_17" isMarkerVisible="true">
+        <dc:Bounds x="2225" y="95" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Ende_18_di" bpmnElement="Ende_18">
+        <dc:Bounds x="2422" y="102" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Zusammen_19_di" bpmnElement="Zusammen_19" isMarkerVisible="true">
+        <dc:Bounds x="1845" y="315" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_Start_1__Gleichzeitig_2_di" bpmnElement="f_Start_1__Gleichzeitig_2">
+        <di:waypoint x="178" y="120" />
+        <di:waypoint x="325" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Gleichzeitig_2__Schritt_3_di" bpmnElement="f_Gleichzeitig_2__Schritt_3">
+        <di:waypoint x="375" y="120" />
+        <di:waypoint x="515" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Gleichzeitig_2__Schritt_4_di" bpmnElement="f_Gleichzeitig_2__Schritt_4">
+        <di:waypoint x="350" y="145" />
+        <di:waypoint x="350" y="230" />
+        <di:waypoint x="470" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_3__Zusammen_5_di" bpmnElement="f_Schritt_3__Zusammen_5">
+        <di:waypoint x="800" y="120" />
+        <di:waypoint x="895" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_4__Zusammen_5_di" bpmnElement="f_Schritt_4__Zusammen_5">
+        <di:waypoint x="610" y="230" />
+        <di:waypoint x="920" y="230" />
+        <di:waypoint x="920" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Zusammen_5__Wenn_6_di" bpmnElement="f_Zusammen_5__Wenn_6">
+        <di:waypoint x="945" y="120" />
+        <di:waypoint x="1085" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Zusammen_7__Schritt_3_di" bpmnElement="f_Zusammen_7__Schritt_3">
+        <di:waypoint x="565" y="120" />
+        <di:waypoint x="660" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Zusammen_7_di" bpmnElement="f_Wenn_6__Zusammen_7">
+        <di:waypoint x="1110" y="95" />
+        <di:waypoint x="1110" y="75" />
+        <di:waypoint x="540" y="75" />
+        <di:waypoint x="540" y="95" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_6__Wenn_8_di" bpmnElement="f_Wenn_6__Wenn_8">
+        <di:waypoint x="1135" y="120" />
+        <di:waypoint x="1275" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_8__Wenn_9_di" bpmnElement="f_Wenn_8__Wenn_9">
+        <di:waypoint x="1325" y="120" />
+        <di:waypoint x="1465" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_9__Ende_10_di" bpmnElement="f_Wenn_9__Ende_10">
+        <di:waypoint x="1515" y="120" />
+        <di:waypoint x="1589" y="120" />
+        <di:waypoint x="1589" y="340" />
+        <di:waypoint x="1662" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_8__Wenn_11_di" bpmnElement="f_Wenn_8__Wenn_11">
+        <di:waypoint x="1300" y="145" />
+        <di:waypoint x="1300" y="230" />
+        <di:waypoint x="1465" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_11__Wenn_12_di" bpmnElement="f_Wenn_11__Wenn_12">
+        <di:waypoint x="1490" y="205" />
+        <di:waypoint x="1490" y="185" />
+        <di:waypoint x="1680" y="185" />
+        <di:waypoint x="1680" y="145" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_12__Ende_13_di" bpmnElement="f_Wenn_12__Ende_13">
+        <di:waypoint x="1705" y="120" />
+        <di:waypoint x="1852" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_12__Ende_14_di" bpmnElement="f_Wenn_12__Ende_14">
+        <di:waypoint x="1680" y="95" />
+        <di:waypoint x="1680" y="75" />
+        <di:waypoint x="1832" y="75" />
+        <di:waypoint x="1832" y="230" />
+        <di:waypoint x="1852" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_11__Schritt_15_di" bpmnElement="f_Wenn_11__Schritt_15">
+        <di:waypoint x="1515" y="230" />
+        <di:waypoint x="1610" y="230" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_15__Schritt_16_di" bpmnElement="f_Schritt_15__Schritt_16">
+        <di:waypoint x="1750" y="230" />
+        <di:waypoint x="1798" y="230" />
+        <di:waypoint x="1798" y="340" />
+        <di:waypoint x="1845" y="340" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Schritt_16__Wenn_17_di" bpmnElement="f_Schritt_16__Wenn_17">
+        <di:waypoint x="2130" y="120" />
+        <di:waypoint x="2225" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_17__Ende_18_di" bpmnElement="f_Wenn_17__Ende_18">
+        <di:waypoint x="2275" y="120" />
+        <di:waypoint x="2422" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Zusammen_19__Schritt_16_di" bpmnElement="f_Zusammen_19__Schritt_16">
+        <di:waypoint x="1895" y="340" />
+        <di:waypoint x="2060" y="340" />
+        <di:waypoint x="2060" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_Wenn_17__Zusammen_19_di" bpmnElement="f_Wenn_17__Zusammen_19">
+        <di:waypoint x="2250" y="145" />
+        <di:waypoint x="2250" y="380" />
+        <di:waypoint x="1870" y="380" />
+        <di:waypoint x="1870" y="365" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
