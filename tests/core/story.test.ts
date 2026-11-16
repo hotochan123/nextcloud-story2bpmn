@@ -92,16 +92,16 @@ test('story text: signal words, marked objects, only side paths are indented', (
   assert.deepEqual(lines, [
     'ES BEGINNT: [Rechnung geht ein] bei [@Buchhaltung].',
     '[@Buchhaltung] soll [Rechnung prüfen].',
-    'FALLS [Betrag falsch]:',
+    'AUSNAHME [Betrag falsch]:',
     '  [@Buchhaltung] soll [Rückfrage beim Lieferanten].',
     '  WEITER BEI [Rechnung prüfen].',
     // The normal path after the exception is the main line again.
     'WENN [?Betrag über 5000 €]',
     '→ ja:',
     '  [@Führungskraft] soll [Zahlung freigeben].',
-    '  ZUSAMMEN.',
+    '  ZUSAMMENFÜHREN.',
     'SONST → nein:',
-    '  ZUSAMMEN.',
+    '  ZUSAMMENFÜHREN.',
     '[@Buchhaltung] soll [Zahlung anweisen].',
     'ENDE: [Bezahlt].'
   ]);
@@ -118,7 +118,7 @@ test('English: signal words, questions, pool and ENTWURF; typed text stays', asy
   assert.deepEqual(g.storyText.map((l) => '  '.repeat(l.depth) + l.text), [
     'IT STARTS: [Rechnung geht ein] at [@Buchhaltung].',
     '[@Buchhaltung] shall [Rechnung prüfen].',
-    'IN CASE OF [Betrag falsch]:',
+    'EXCEPTION [Betrag falsch]:',
     '  [@Buchhaltung] shall [Rückfrage beim Lieferanten].',
     '  CONTINUE AT [Rechnung prüfen].',
     'IF [?Betrag über 5000 €]',
@@ -162,7 +162,7 @@ test('process name, system and deadline: in the diagram and in the story text; e
   assert.deepEqual(g.storyText.map((l) => l.text), [
     'ES BEGINNT: [Rechnung geht ein] bei [@Buchhaltung].',
     '[@Buchhaltung] soll [Rechnung prüfen] in [#SAP], Frist [!3 Tage].',
-    'FALLS [!nach 3 Tagen]:',
+    'AUSNAHME [!nach 3 Tagen]:',
     'ENDE: [Gemahnt].',
     '[@Buchhaltung] soll [Zahlung anweisen].',
     'ENDE: [Bezahlt].'
@@ -336,8 +336,8 @@ test('exception where the task keeps running: dashed, path must end', async () =
   const g = tell(moves);
   assert.deepEqual(g.errors, []);
   assert.equal(g.done, true);
-  assert.ok(g.storyText.some((l) => l.text === 'FALLS [!nach 2 Tagen], Schritt läuft weiter:'));
-  assert.ok(g.storyText.some((l) => l.text === 'FALLS NACHRICHT [Antrag zurückgezogen]:'));
+  assert.ok(g.storyText.some((l) => l.text === 'AUSNAHME [!nach 2 Tagen], Schritt läuft weiter:'));
+  assert.ok(g.storyText.some((l) => l.text === 'AUSNAHME NACHRICHT [Antrag zurückgezogen]:'));
   // The side path may neither merge nor jump back - only end.
   const beside = tell(moves.slice(0, 4));
   assert.ok(!beside.options.includes('merge') && !beside.options.includes('goTo'));
@@ -423,7 +423,7 @@ test('condition on start, wait and what happens first: condition in plain text, 
 
 test('guidance: path, still open paths and the role where it continues', async () => {
   const afterExceptionPath = tell(invoice.slice(0, 3));
-  assert.equal(afterExceptionPath.path, 'Falls „Betrag falsch“');
+  assert.equal(afterExceptionPath.path, 'Ausnahme „Betrag falsch“');
   assert.deepEqual(afterExceptionPath.open, ['Normaler Weg nach „Rechnung prüfen“']);
   assert.equal(afterExceptionPath.here, 'Ausnahme_3');
 
@@ -466,8 +466,8 @@ test('switch: bring an open path forward, continuation gets a heading', async ()
   assert.deepEqual(text.slice(text.indexOf('SONST → nein:'), text.indexOf('SONST → nein:') + 4), [
     'SONST → nein:',
     'ENDE: [Abgelehnt].',
-    'WEITER AUF DEM WEG „Betrag über 5000 €?“ → ja:',
-    'ZUSAMMEN.'
+    'WIEDER AUF DEM WEG „Betrag über 5000 €?“ → ja:',
+    'ZUSAMMENFÜHREN.'
   ]);
   const r = await run({ ir: emptyProcess('P', 'Prozess'), ops: g.ops });
   assert.deepEqual(r.issues, []);

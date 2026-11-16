@@ -25,7 +25,7 @@ Rules:
 
 **Whichever comes first:** every path gets a kind (message, time or condition). The label of the path is the catching event. This way the BPMN rule "behind the event-based gateway comes a catching event" is already satisfied by the story, without a form of its own.
 
-**Story text:** two new signal words, `WARTEN AUF` and `WAS ZUERST PASSIERT` (en `WAIT FOR`, `WHAT COMES FIRST`). The kind appears as a word in the sentence, for example „ES BEGINNT mit Nachricht: [Antrag geht ein]“ or „FALLS nach [2 Tagen], Schritt läuft weiter:“.
+**Story text:** two new signal words, `WARTEN AUF` and `WAS ZUERST PASSIERT` (en `WAIT FOR`, `WHAT COMES FIRST`). The kind appears as a word in the sentence, for example „ES BEGINNT mit Nachricht: [Antrag geht ein]“ or „FALLS nach [2 Tagen], Schritt läuft weiter:“. Since job 444 the exception word is `AUSNAHME` (en `EXCEPTION`): „AUSNAHME [!nach 2 Tagen], Schritt läuft weiter:“; the old word is still read back.
 
 ## Not planned
 

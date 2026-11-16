@@ -38,7 +38,9 @@ description.
   path, end, continue at an earlier task, also within a branch of in parallel, signals: a notice to everyone, awaited
   or given); a decision, whichever comes first and in parallel can have more
   than two paths; the diagram on the right grows with
-  every move, laid out automatically, with lanes for the roles.
+  every move, laid out automatically, with lanes for the roles. Changing the role
+  in the edit form of a step can rename it in all steps at once, or merge it into
+  another role.
 - **Example process:** "See an example" on the empty start page (on a phone
   also "Open example" in the ⋯ menu) opens a short invoice approval told to its end,
   in German or English after the account language; change it and tell it on,
@@ -58,7 +60,7 @@ description.
 - **Edit the story:** change any line, insert a step, a wait, a signal, a branch or "in parallel" before it (a branch takes what follows into its first path, the others stay open), give a step an exception or the process another trigger later, delete it,
   delete a branch keeping one of its paths, delete one path of three or more,
   give a branch another path later
-  (it stays open until you tell it), reopen a path that merges, continues elsewhere or ends, undo the last change, or begin a new process with New. Or edit the whole story as plain text, checked while you type.
+  (it stays open until you tell it), switch a branch to another kind (checked, what comes first, in parallel) keeping its paths and what is told on them, move a path up or down among the paths of its branch, move a line (with the lines after it, or a branch with its paths) to another place, also onto another path, let a line and what follows it apply to all paths again ("From here on for all paths"), reopen a path that merges, continues elsewhere or ends, undo the last change, or begin a new process with New. Or edit the whole story as plain text, checked while you type; "Edit as text" in the ⋯ of a line opens it with the cursor on that line.
 - **Working files in Files:** new, open, save and save as `.bpmn` with the
   Nextcloud file picker; a click on a `.bpmn` in Files opens it in the app.
   Saving never silently overwrites a file someone changed meanwhile, and a file
@@ -73,7 +75,8 @@ description.
   diagram is a band above the story.
 - **Phone view:** below 700 px width or 500 px height one view at a time,
   story or diagram, switched in a bar at the bottom (a rail at the left edge
-  when held sideways) with Undo and the next move, or Fit and Follow. A tapped
+  when held sideways) with Undo and, while there is something to tell, the next
+  move; Follow, zoom and Fit sit in the head of the diagram. A tapped
   line offers "Show in the diagram", a tapped shape "To the line"; after a move
   the story stays and a point on "Diagram" says it has grown, nothing switches
   by itself. Moves, the ⋯ of a line and the head actions open as sheets from
@@ -91,7 +94,8 @@ description.
   preview, and approve it as "Valid version n": a named file version plus the
   reading copy without DRAFT. Everyone who can read the file makes proposals on
   a line as a comment; the process owner accepts or rejects them in the sidebar
-  (proposals, versions, sharing). The state can also show as a tag in Files.
+  (proposals open and decided, versions, approvals with the shares). The request
+  dialog shows the changes against the last valid version. The state can also show as a tag in Files.
   When the chosen process owner cannot edit the file yet, the request dialog
   shares it with them with edit rights in one click (never on its own).
 - **Two diagram languages:** each process is told in German or English
@@ -168,9 +172,9 @@ agents:
 - the documentation, including this README, and the translations.
 
 **Tool and models.** The agents run in Anthropic's Claude Code. The private
-development history up to this release has 243 commits (merges not
-counted), from 9 November 2026 to 15 November 2026. Each commit written by an agent carries a
-`Co-Authored-By` trailer naming the model: Claude Opus 5.5 (233 commits). 10 commits without such a trailer came from people by hand (contributions through the public repository). The first 38 commits are the history of the standalone tool bpmn-core that the app grew out of: it was cut down to telling a story (building blocks, a chat input and the AI connection were removed) and gained the marked story text, English as a second language, the event kinds and its workshop design, before it was wrapped into this Nextcloud app.
+development history up to this release has 285 commits (merges not
+counted), from 9 November 2026 to 16 November 2026. Each commit written by an agent carries a
+`Co-Authored-By` trailer naming the model: Claude Opus 5.5 (273 commits). 12 commits without such a trailer came from people by hand (contributions through the public repository). The first 38 commits are the history of the standalone tool bpmn-core that the app grew out of: it was cut down to telling a story (building blocks, a chat input and the AI connection were removed) and gained the marked story text, English as a second language, the event kinds and its workshop design, before it was wrapped into this Nextcloud app.
 
 **How a change is made.** The maintainer decides what goes in, in question
 rounds with an agent. Each change then runs as one job of an automated

@@ -53,8 +53,8 @@ test('390 round 1: switching it on in a new form preselects one after another, a
 	assert.equal(forEachSwitched({ forEach: '', text: 'X' }).eachOrder, undefined);
 });
 
-test('390 AK7 the item after FÜR JEDE / FOR EACH is an item, the step stays a step', () => {
-	for (const line of ['[@Buchhaltung] soll [Position prüfen], FÜR JEDE [Rechnungsposition], NACHEINANDER.', '[@A] shall [Check], FOR EACH [invoice item], IN PARALLEL, WITH SUBPROCESS.']) {
+test('390 AK7 the item after JE (old: FÜR JEDE) / FOR EACH is an item, the step stays a step', () => {
+	for (const line of ['[@Buchhaltung] soll [Position prüfen], JE [Rechnungsposition], NACHEINANDER.', '[@Buchhaltung] soll [Position prüfen], FÜR JEDE [Rechnungsposition], NACHEINANDER.', '[@A] shall [Check], FOR EACH [invoice item], IN PARALLEL, WITH SUBPROCESS.']) {
 		for (const parts of [lineParts(line), textParts(line)]) {
 			const objects = parts.filter((p) => p.subtype === 'o').map((p) => p.object);
 			assert.deepEqual(objects, ['role', 'task', 'item'], line);

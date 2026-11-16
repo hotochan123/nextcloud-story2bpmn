@@ -3,7 +3,7 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <template>
-	<NcAppSidebar :name="file.name"
+	<NcAppSidebar :name="processName || file.name"
 		:subname="subname"
 		class="story2bpmn-sidebar"
 		:class="{ 'story2bpmn-sidebar-phone': phone }"
@@ -17,10 +17,12 @@
 				<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6" /></svg>
 			</button>
 		</template>
-		<NcAppSidebarTab id="story2bpmn-proposals" :name="t('story2bpmn', 'Proposals')" :order="1">
+		<!-- The tab carries the number of open proposals (view B1); NcAppSidebarTab has no slot for a chip. -->
+		<NcAppSidebarTab id="story2bpmn-proposals" :name="proposals.length ? t('story2bpmn', 'Proposals ({count})', { count: proposals.length }) : t('story2bpmn', 'Proposals')" :order="1">
 			<template #icon>
 				<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /></svg>
 			</template>
+			<!-- View B1 (job 450): register entries with a state chip, open ones first, then the decided ones. -->
 			<div class="side-content story2bpmn-workshop">
 				<p v-if="!approval || !approval.valid" class="quiet-text">
 					{{ t('story2bpmn', 'Proposals refer to a valid version. There is none yet.') }}
@@ -28,45 +30,60 @@
 				<p v-else-if="!proposals.length" class="quiet-text">
 					{{ t('story2bpmn', 'No open proposals on valid version {number}.', { number: approval.valid.number }) }}
 				</p>
-				<article v-for="p in proposals"
-					:key="p.id"
-					class="proposal">
-					<p class="who">
-						<b>{{ p.actorName }}</b> · {{ when(p.date) }}
-					</p>
-					<p class="ref">
-						{{ t('story2bpmn', 'Line {line}', { line: p.line }) }} · {{ kindText(p.kind) }}
-					</p>
-					<p v-if="p.text" class="new-text">
-						{{ p.text }}
-					</p>
-					<p v-if="p.why" class="why">
-						{{ p.why }}
-					</p>
-					<div class="row">
-						<button type="button" class="button quiet small" @click="$emit('choose-line', p)">
-							{{ t('story2bpmn', 'Go to line') }}
-						</button>
-						<template v-if="canDecide">
-							<button v-for="b in buttonsOf(p)"
-								:key="b.key"
-								type="button"
-								class="button small"
-								:class="{ main: b.kind === 'accepted' && !b.armed, armed: b.armed }"
-								:data-decide="b.key"
-								:disabled="b.disabled"
-								:aria-describedby="unsaved ? 'story2bpmn-unsaved-' + p.id : undefined"
-								@click="press(p, b, $event)">
-								{{ buttonText(b) }}
+				<div v-if="proposals.length || decidedList.length" class="register">
+					<article v-for="p in proposals"
+						:key="p.id"
+						class="proposal entry"
+						:aria-current="current === p.id ? 'true' : undefined">
+						<p class="line1 who">
+							<span class="so-chip so-chip--open">{{ t('story2bpmn', 'Undecided') }}</span>
+							<span class="so-rubric">{{ t('story2bpmn', 'Line') }} <b class="so-num">{{ p.line }}</b> · {{ p.actorName }} · <span class="so-num">{{ when(p.date) }}</span></span>
+						</p>
+						<p class="ref">
+							{{ kindText(p.kind) }}
+						</p>
+						<p v-if="p.text" class="new-text so-user-text">
+							{{ p.text }}
+						</p>
+						<p v-if="p.why" class="why so-user-text">
+							{{ p.why }}
+						</p>
+						<div class="row">
+							<button type="button" class="button quiet small" @click="goTo(p)">
+								{{ t('story2bpmn', 'Go to line') }}
 							</button>
-						</template>
-					</div>
-					<p v-if="canDecide && unsaved"
-						:id="'story2bpmn-unsaved-' + p.id"
-						class="hint">
-						{{ t('story2bpmn', 'Save or discard your changes first') }}
-					</p>
-				</article>
+							<template v-if="canDecide">
+								<button v-for="b in buttonsOf(p)"
+									:key="b.key"
+									type="button"
+									class="button small"
+									:class="{ quiet: b.kind === 'rejected' && !b.armed, armed: b.armed }"
+									:data-decide="b.key"
+									:disabled="b.disabled"
+									:aria-describedby="unsaved ? 'story2bpmn-unsaved-' + p.id : undefined"
+									@click="press(p, b, $event)">
+									{{ buttonText(b) }}
+								</button>
+							</template>
+						</div>
+						<p v-if="canDecide && unsaved"
+							:id="'story2bpmn-unsaved-' + p.id"
+							class="hint">
+							{{ t('story2bpmn', 'Save or discard your changes first') }}
+						</p>
+					</article>
+					<article v-for="p in decidedList"
+						:key="p.id"
+						class="decided-proposal entry">
+						<p class="line1">
+							<span class="so-chip" :class="p.decision === 'rejected' ? 'so-chip--danger' : 'so-chip--closed'">{{ decisionText(p.decision) }}</span>
+							<span class="so-rubric">{{ t('story2bpmn', 'Line') }} <b class="so-num">{{ p.line }}</b> · {{ p.actorName }} · <span class="so-num">{{ when(p.date) }}</span></span>
+						</p>
+						<p v-if="p.text || p.why" class="quote so-user-text">
+							{{ p.text || p.why }}
+						</p>
+					</article>
+				</div>
 				<p v-if="approval && approval.valid" class="quiet-text">
 					{{ t('story2bpmn', 'Accepting writes the new wording into the working file. Accepted proposals become valid together with the next approval.') }}
 				</p>
@@ -80,32 +97,67 @@
 				<p v-if="versionList === false" class="quiet-text">
 					{{ t('story2bpmn', 'The versions could not be loaded.') }}
 				</p>
-				<ul v-else class="list">
-					<li>
-						<span>{{ t('story2bpmn', 'Current state') }}
-							<small>{{ approval && approval.valid ? (changed ? t('story2bpmn', 'changed since version {number}', { number: approval.valid.number }) : t('story2bpmn', 'same as version {number}', { number: approval.valid.number })) : '' }}</small>
-						</span>
-						<button v-if="changed"
-							type="button"
-							class="button quiet small"
-							@click="$emit('compare')">
-							{{ t('story2bpmn', 'Compare') }}
-						</button>
-					</li>
-					<li v-for="v in named" :key="v.id">
-						<span><b>{{ v.label }}</b><small>{{ when(v.mtime * 1000) }}</small></span>
-					</li>
-					<li v-if="unnamed" class="quiet-text">
+				<div v-else class="register">
+					<div class="entry current-state">
+						<p class="line1">
+							<span v-if="approval && approval.valid && changed" class="so-chip so-chip--closed">{{ t('story2bpmn', 'Draft') }}</span>
+							<span class="so-rubric">{{ t('story2bpmn', 'Current state') }}</span>
+						</p>
+						<p v-if="approval && approval.valid">
+							{{ changed ? n('story2bpmn', 'Changes against version {number}: %n line', 'Changes against version {number}: %n lines', changedLines, { number: approval.valid.number }) : t('story2bpmn', 'same as version {number}', { number: approval.valid.number }) }}
+						</p>
+						<div v-if="changed" class="row">
+							<button type="button"
+								class="button quiet small"
+								@click="$emit('compare')">
+								{{ t('story2bpmn', 'Compare') }}
+							</button>
+						</div>
+					</div>
+					<div v-for="v in named" :key="v.id" class="entry version">
+						<p class="line1">
+							<span class="so-chip" :class="'so-chip--' + versionChip(v.label, approval?.valid?.number)">{{ v.label }}</span>
+							<span class="so-rubric so-num">{{ when(v.mtime * 1000) }}</span>
+						</p>
+					</div>
+					<p v-if="unnamed" class="quiet-text entry">
 						{{ n('story2bpmn', '%n state without a name (saved automatically; Nextcloud cleans these up)', '%n states without a name (saved automatically; Nextcloud cleans these up)', unnamed) }}
-					</li>
-				</ul>
+					</p>
+				</div>
 			</div>
 		</NcAppSidebarTab>
-		<NcAppSidebarTab id="story2bpmn-share" :name="t('story2bpmn', 'Share')" :order="3">
+		<NcAppSidebarTab id="story2bpmn-approvals" :name="t('story2bpmn', 'Approvals')" :order="3">
 			<template #icon>
-				<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4" /></svg>
+				<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
 			</template>
 			<div class="side-content story2bpmn-workshop">
+				<p v-if="!history.length" class="quiet-text">
+					{{ t('story2bpmn', 'No request for approval yet.') }}
+				</p>
+				<div v-else class="register">
+					<div v-for="h in history" :key="h.id" class="entry history" :class="'history-' + h.kind">
+						<template v-if="h.kind === 'request'">
+							<p class="line1">
+								<span class="so-chip" :class="h.open ? 'so-chip--open' : 'so-chip--plain'">{{ h.open ? t('story2bpmn', 'Waiting') : t('story2bpmn', 'Asked') }}</span>
+								<span class="so-rubric">{{ t('story2bpmn', 'asked') }} <span class="so-num">{{ when(h.date) }}</span> · {{ h.by }}</span>
+							</p>
+							<p>{{ t('story2bpmn', 'Asked {name} for approval', { name: h.owner }, undefined, { escape: false, sanitize: false }) }}</p>
+							<p v-if="h.note" class="quote so-user-text">
+								{{ h.note }}
+							</p>
+						</template>
+						<template v-else>
+							<p class="line1">
+								<span class="so-chip so-chip--closed">{{ t('story2bpmn', 'Granted') }}</span>
+								<span class="so-rubric"><span class="so-num">{{ when(h.date) }}</span> · {{ h.by }}</span>
+							</p>
+							<p>{{ t('story2bpmn', 'Version {number} approved', { number: h.number }) }}</p>
+						</template>
+					</div>
+				</div>
+				<p class="so-rubric shared-head">
+					{{ t('story2bpmn', 'Shared with') }}
+				</p>
 				<ul v-if="shareList && shareList.length" class="list">
 					<li v-for="(s, i) in shareList" :key="i">
 						<span>{{ s.type === 3 ? t('story2bpmn', 'Public link') : s.name }}
@@ -139,7 +191,7 @@ import NcAppSidebar from '@nextcloud/vue/components/NcAppSidebar'
 import NcAppSidebarTab from '@nextcloud/vue/components/NcAppSidebarTab'
 import { versions, shares, filesLink } from '../nextcloudApi.js'
 import { createArm } from '../armed.ts'
-import { decisionButtons, shareRole } from '../approval.ts'
+import { decisionButtons, shareRole, decidedProposals, approvalHistory, versionChip } from '../approval.ts'
 
 export default {
 	name: 'ApprovalSidebar',
@@ -148,6 +200,12 @@ export default {
 		file: { type: Object, required: true },
 		approval: { type: Object, default: null },
 		proposals: { type: Array, default: () => [] },
+		/** The file's comments: decided proposals and the approval history are read from them (job 450). */
+		comments: { type: Array, default: () => [] },
+		/** The process name (title of the sidebar). */
+		processName: { type: String, default: '' },
+		/** Lines that differ from the valid version. */
+		changedLines: { type: Number, default: 0 },
 		canDecide: { type: Boolean, default: false },
 		busy: { type: Boolean, default: false },
 		/** Unsaved changes in the story: deciding is locked, nothing is saved along (job 416). */
@@ -160,12 +218,20 @@ export default {
 	},
 	emits: ['close', 'decide', 'choose-line', 'compare'],
 	data() {
-		return { versionList: null, shareList: null, armed: false }
+		return { versionList: null, shareList: null, armed: false, current: null }
 	},
 	computed: {
 		subname() {
+			const o = this.approval?.owner
+			if (o) return t('story2bpmn', 'Process owner: {name}', { name: o.name || o.uid }, undefined, { escape: false, sanitize: false })
 			const v = this.approval?.valid
 			return v ? t('story2bpmn', 'Valid version {number}', { number: v.number }) : t('story2bpmn', 'Not approved yet')
+		},
+		decidedList() {
+			return decidedProposals(this.comments, this.approval)
+		},
+		history() {
+			return approvalHistory(this.comments, this.approval)
 		},
 		named() {
 			return (this.versionList || []).filter((v) => v.label).sort((a, b) => b.mtime - a.mtime)
@@ -208,6 +274,17 @@ export default {
 	methods: {
 		t,
 		n,
+		versionChip,
+		goTo(p) {
+			this.current = p.id
+			this.$emit('choose-line', p)
+		},
+		decisionText(d) {
+			if (d === 'accepted') return t('story2bpmn', 'Accepted')
+			if (d === 'rejected') return t('story2bpmn', 'Rejected')
+			if (d === 'done') return t('story2bpmn', 'Done')
+			return t('story2bpmn', 'Decided')
+		},
 		async load() {
 			const id = this.file.id
 			const [v, s] = await Promise.allSettled([versions(id), this.file.path ? shares(this.file.path) : Promise.reject(new Error('no path'))])
@@ -254,15 +331,20 @@ export default {
 <style scoped>
 .side-content { display: grid; gap: 12px; padding: 10px 4px; min-height: 0; align-content: start; }
 .quiet-text { margin: 0; color: var(--color-text-maxcontrast); font-size: 13.5px; }
-.proposal { border: 1px solid var(--color-border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
-.proposal p { margin: 0; overflow-wrap: anywhere; }
-.proposal .ref { font: 600 11px/1.3 var(--font-face, monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-maxcontrast); }
-.proposal .new-text { font-family: monospace; font-size: 13px; background: var(--color-background-dark); padding: 6px 8px; border-radius: 6px; white-space: pre-wrap; }
-.proposal .why { white-space: pre-wrap; }
+.register { display: grid; }
+.entry { display: grid; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); }
+.entry:first-child { border-top: 0; }
+.entry p { margin: 0; overflow-wrap: anywhere; }
+.entry[aria-current="true"] { background: var(--so-accent-tint); box-shadow: inset 2px 0 0 var(--accent); }
+.line1 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.proposal .ref { font: 400 var(--text-sm)/1.3 var(--font-body); color: var(--muted); }
+.proposal .new-text { white-space: pre-wrap; }
+.proposal .why, .quote { white-space: pre-wrap; }
+.quote { color: var(--muted); }
 .row { display: flex; flex-wrap: wrap; gap: 6px; }
 .proposal .hint { color: var(--color-text-maxcontrast); font-size: 13px; }
+.shared-head { margin: 8px 0 0; }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .list li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .list small { display: block; color: var(--color-text-maxcontrast); }
-
 </style>

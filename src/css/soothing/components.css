@@ -1,0 +1,409 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Soothing — components.css
+ * Content components for Nextcloud apps. Requires tokens.css.
+ * All classes are prefixed .so- so they survive teleported NC modals and
+ * never collide with server styles. Buttons, modals, selects, checkboxes
+ * stay Nextcloud components (NcButton, NcModal, NcSelect …).
+ * ─────────────────────────────────────────────────────────────────────── */
+
+/* ─── Base helpers ──────────────────────────────────────────────────── */
+.so-num, .so-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+.so-num { font-size: 0.92em; letter-spacing: 0; }
+.so-rubric {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: 18px;
+  color: var(--muted);
+  margin: 0;
+}
+.so-rubric b { color: var(--fg); font-weight: 600; }
+.so-title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-display);
+  color: var(--fg);
+  margin: 0;
+}
+.so-text-muted { color: var(--muted); }
+.so-user-text { overflow-wrap: anywhere; }
+.so-sr-only {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; margin: -1px;
+}
+.so-glyph { display: inline-block; width: 1em; height: 1em; flex: none; vertical-align: -0.125em; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Reset only what NC forces on <button> inside our own components. */
+.so-reset-btn {
+  appearance: none; margin: 0; min-height: 0; padding: 0;
+  font: inherit; color: inherit; background: none;
+  border: 0; border-radius: 0; box-shadow: none; cursor: pointer;
+}
+/* NC core (core/css/inputs.css, NC 34) styles every button:not(.button-vue,[class^=vs__])
+ * at (0,1,1), hover/focus/disabled at (0,2,1). Repeat that selector shape so the reset
+ * wins without !important. */
+button.so-reset-btn:not(.button-vue, [class^=vs__]) {
+  width: auto; min-height: 0; margin: 0; padding: 0;
+  font: inherit; color: inherit; background: none;
+  border: 0; border-radius: 0; box-shadow: none;
+}
+button.so-reset-btn:not(.button-vue, [class^=vs__]):is(:hover, :focus, :active, :disabled) {
+  background: none; color: inherit;
+}
+:where([class^="so-"], [class*=" so-"]):focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* ─── Page frame ────────────────────────────────────────────────────── */
+.so-page {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--section-y-desktop) var(--container-gutter-desktop) var(--space-12);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+}
+.so-page--narrow { max-width: var(--so-container-narrow); }
+.so-page__head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-6);
+  border-bottom: 1px solid var(--so-rule);
+}
+.so-page__head .so-rubric { margin-bottom: var(--space-1); }
+@media (max-width: 720px) {
+  .so-page { padding: var(--section-y-phone) var(--container-gutter-phone) var(--space-8); }
+}
+
+/* ─── Panel: the register ───────────────────────────────────────────
+ * Framed block with a quiet head strip and hairline rows. Replaces
+ * floating cards. Head: rubric left, status right. */
+.so-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.so-stack { display: grid; gap: var(--space-4); }   /* vertical rhythm between panels */
+.so-panel__head, .so-panel__foot {
+  flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-warm);
+}
+.so-panel__head { border-bottom: 1px solid var(--border); }
+.so-panel__foot { border-top: 1px solid var(--border); font-size: var(--text-sm); color: var(--muted); }
+.so-panel__body { padding: var(--space-4); }
+.so-panel__title { font-size: var(--text-lg); font-weight: 600; line-height: var(--leading-tight); margin: 0 0 var(--space-1); }
+.so-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  min-height: var(--so-row);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-soft);
+}
+.so-row:first-child { border-top: 0; }
+.so-row--link { cursor: pointer; transition: background var(--motion-fast) var(--ease-standard); }
+.so-row--link:hover { background: var(--color-background-hover); }
+.so-row[aria-selected="true"], .so-row--selected {
+  background: var(--so-accent-tint);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.so-row__main { flex: 1 1 auto; min-width: 0; }
+.so-row__meta { flex: none; color: var(--muted); font-size: var(--text-sm); }
+
+/* ─── Chip: state marker ────────────────────────────────────────────
+ * Small, squared, glyph + word. Never colour alone. */
+.so-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.so-chip::before {
+  content: ""; width: 7px; height: 7px; flex: none;
+  background: currentColor; border-radius: 50%;
+  color: var(--muted);
+}
+.so-chip--plain::before { display: none; }
+.so-chip--open::before    { color: var(--success); }
+.so-chip--closed::before  { color: var(--muted); border-radius: 2px; }      /* square = closed */
+.so-chip--warn::before    { color: var(--warn); border-radius: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); width: 8px; height: 8px; }
+.so-chip--danger::before  { color: var(--danger); border-radius: 0; clip-path: polygon(20% 0, 50% 30%, 80% 0, 100% 20%, 70% 50%, 100% 80%, 80% 100%, 50% 70%, 20% 100%, 0 80%, 30% 50%, 0 20%); width: 8px; height: 8px; }
+.so-chip--info::before    { color: var(--info); }
+.so-chip--accent { border-color: var(--accent); color: var(--so-accent-tint-text); background: var(--so-accent-tint); }
+.so-chip--accent::before { color: var(--accent); }
+.so-chip--ok      { background: var(--so-success-tint); color: var(--so-success-text); border-color: transparent; }
+.so-chip--ok::before { color: var(--success); }
+.so-chip--inherited { border-style: dashed; background: transparent; }
+.so-chip--count { font-family: var(--font-mono); font-size: var(--text-xs); }
+.so-chip--count::before { display: none; }
+
+/* ─── Key figure ────────────────────────────────────────────────────── */
+.so-figure { display: grid; gap: 2px; }
+.so-figure__value {
+  font-family: var(--font-mono);
+    font-size: var(--text-3xl);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.so-figure__value small { font-size: 0.45em; color: var(--muted); letter-spacing: 0; margin-left: 2px; }
+.so-figure-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.so-figure-strip > .so-figure { padding: var(--space-3) var(--space-4); border-left: 1px solid var(--border-soft); }
+.so-figure-strip > .so-figure:first-child { border-left: 0; }
+
+/* ─── Meter: result bar ─────────────────────────────────────────────
+ * label | flat track with quarter ticks | mono value.
+ * Winner: solid accent bar + "▸" marker + bold label (form + text). */
+.so-meter {
+  display: grid;
+  grid-template-columns: minmax(6em, 14em) 1fr 5.5em;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  min-height: var(--so-row);
+  padding: var(--space-1) var(--space-4);
+}
+.so-meter + .so-meter { border-top: 1px solid var(--border-soft); }
+.so-meter__label { min-width: 0; overflow-wrap: anywhere; }
+.so-meter__track {
+  position: relative; height: 10px;
+  background:
+    linear-gradient(90deg, transparent calc(25% - 0.5px), var(--border) calc(25% - 0.5px) calc(25% + 0.5px), transparent calc(25% + 0.5px) calc(50% - 0.5px), var(--border) calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px) calc(75% - 0.5px), var(--border) calc(75% - 0.5px) calc(75% + 0.5px), transparent calc(75% + 0.5px)),
+    var(--so-surface-sunk);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.so-meter__fill {
+  position: absolute; inset: 0 auto 0 0;
+  width: var(--value, 0%);
+  background: var(--so-rule);
+  transition: width var(--motion-base) var(--ease-standard);
+}
+.so-meter__value { text-align: right; font-family: var(--font-mono); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.so-meter__value small { display: block; font-family: var(--font-body); color: var(--muted); font-size: var(--text-xs); line-height: 1.2; }
+.so-meter--winner .so-meter__fill { background: var(--accent); }
+.so-meter--winner .so-meter__label { font-weight: 600; }
+.so-meter--winner .so-meter__label::before { content: "▸ "; color: var(--accent); }
+.so-meter--threshold .so-meter__track::after {  /* quorum / majority line at --threshold */
+  content: ""; position: absolute; top: -3px; bottom: -3px; left: var(--threshold, 50%);
+  width: 2px; background: var(--fg);
+}
+@media (max-width: 520px) {
+  .so-meter { grid-template-columns: 1fr auto; }
+  .so-meter__track { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* ─── Table ─────────────────────────────────────────────────────────── */
+.so-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.so-table th {
+  text-align: left; vertical-align: bottom;
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--text-sm); font-weight: 400;
+  color: var(--muted);
+  background: var(--surface-warm);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.so-table td {
+  padding: var(--space-2) var(--space-4);
+  height: var(--so-row);
+  border-bottom: 1px solid var(--border-soft);
+  white-space: normal;   /* NC sometimes forces nowrap in tables */
+  vertical-align: middle;
+}
+.so-table tr:last-child td { border-bottom: 0; }
+.so-table .so-col-num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.so-table th.so-col-num { font-family: var(--font-body); }   /* label, not a number */
+.so-table tfoot td { border-top: 1px solid var(--so-rule); border-bottom: 0; font-weight: 600; }
+.so-table tbody tr:hover td { background: var(--color-background-hover); }
+
+/* ─── Key/value list ────────────────────────────────────────────────── */
+.so-kv { display: grid; grid-template-columns: max-content 1fr; gap: 0; margin: 0; }
+.so-kv dt, .so-kv dd { margin: 0; padding: var(--space-2) 0; border-top: 1px solid var(--border-soft); }
+.so-kv dt:first-of-type, .so-kv dd:first-of-type { border-top: 0; }
+.so-kv dt { padding-right: var(--space-6); font-size: var(--text-sm); color: var(--muted); }
+
+/* ─── Notice ────────────────────────────────────────────────────────
+ * Full hairline frame, quiet tint, tag in mono. No coloured left bar. */
+.so-notice {
+  display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-warm);
+  color: var(--fg);
+  font-size: var(--text-sm);
+}
+.so-notice > .so-glyph { width: 18px; height: 18px; margin-top: 1px; color: var(--muted); }
+.so-notice__tag { font-family: var(--font-body); font-size: var(--text-sm); font-weight: 400; }
+.so-notice p { margin: 0; }
+.so-notice--info    { background: var(--so-info-tint);    border-color: color-mix(in srgb, var(--info) 40%, transparent);    color: var(--so-info-text); }
+.so-notice--warn    { background: var(--so-warn-tint);    border-color: color-mix(in srgb, var(--warn) 45%, transparent);    color: var(--so-warn-text); }
+.so-notice--danger  { background: var(--so-danger-tint);  border-color: color-mix(in srgb, var(--danger) 40%, transparent);  color: var(--so-danger-text); }
+.so-notice--success { background: var(--so-success-tint); border-color: color-mix(in srgb, var(--success) 40%, transparent); color: var(--so-success-text); }
+.so-notice--info > .so-glyph { color: var(--info); }
+.so-notice--warn > .so-glyph { color: var(--so-warn-text); }
+.so-notice--danger > .so-glyph { color: var(--danger); }
+.so-notice--success > .so-glyph { color: var(--success); }
+
+/* ─── Segmented control / choice group ──────────────────────────────
+ * One frame, hairline dividers. Selected = tint + weight 600 + 2px --muted underline (not accent; quieter than the hairlines would allow in --fg)
+ * + aria-pressed/aria-checked. Also the folder_retention rule toggle. */
+.so-seg {
+  display: inline-flex; flex-wrap: wrap;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg);
+}
+.so-seg > button, .so-seg > label {
+  appearance: none; margin: 0; box-shadow: none; border-radius: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 34px; padding: 0 var(--space-3);
+  border: 0; border-left: 1px solid var(--border);
+  background: transparent; color: var(--fg);
+  font: inherit; font-size: var(--text-sm); cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+.so-seg > :first-child { border-left: 0; }
+.so-seg > :hover { background: var(--color-background-hover); }
+.so-seg > [aria-pressed="true"], .so-seg > [aria-checked="true"], .so-seg > .is-active {
+  background: var(--so-accent-tint);
+  color: var(--so-accent-tint-text);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--muted);
+}
+/* NC core guard (see .so-reset-btn): core/css/inputs.css gives every plain button
+ * margin, border, radius, min-height and padding at (0,1,1)/(0,2,1). Restate the
+ * whole segment look in the same selector shape so the tint fills the cell. */
+.so-seg > button:not(.button-vue, [class^=vs__]) {
+  width: auto; min-height: 34px; margin: 0; padding: 0 var(--space-3);
+  border: 0; border-left: 1px solid var(--border); border-radius: 0; box-shadow: none;
+  background-color: transparent; color: var(--fg);
+  font: inherit; font-size: var(--text-sm); font-weight: 400;
+}
+.so-seg > button:first-child:not(.button-vue, [class^=vs__]) { border-left: 0; }
+.so-seg > button:not(.button-vue, [class^=vs__]):not(:disabled):is(:hover, :focus) {
+  background-color: var(--color-background-hover); border-color: var(--border);
+}
+.so-seg > button:is([aria-pressed="true"], [aria-checked="true"], .is-active):not(.button-vue, [class^=vs__]):not(:disabled) {
+  background-color: var(--so-accent-tint); color: var(--so-accent-tint-text); font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--muted);
+}
+@media (pointer: coarse) {
+  .so-seg > button, .so-seg > label { min-height: var(--so-target); }
+  .so-seg > button:not(.button-vue, [class^=vs__]) { min-height: var(--so-target); }
+}
+.so-seg--block { display: flex; }
+.so-seg--block > * { flex: 1 1 0; }
+/* Grid variant: options in rows of three (e.g. retention presets). Lines come from a
+ * 1px gap over the border colour, not from stacked borders, so every line is exactly
+ * one hairline at any display scale. A short last row is filled: the last cell spans
+ * the rest. */
+.so-seg--grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px; background: var(--border);
+}
+.so-seg--grid > *, .so-seg--grid > button:not(.button-vue, [class^=vs__]) {
+  border-left: 0; background-color: var(--bg);
+}
+.so-seg--grid > :last-child:nth-child(3n+2) { grid-column: span 2; }
+.so-seg--grid > :last-child:nth-child(3n+1) { grid-column: span 3; }
+
+/* ─── Tabs ──────────────────────────────────────────────────────────── */
+.so-tabs { display: flex; gap: var(--space-6); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.so-tabs > button {
+  appearance: none; margin: 0 0 -1px; padding: var(--space-2) 0; min-height: 40px;
+  background: none; border: 0; border-radius: 0; box-shadow: none;
+  border-bottom: 2px solid transparent;
+  font: inherit; font-size: var(--text-sm); color: var(--muted); cursor: pointer; white-space: nowrap;
+}
+.so-tabs > button:hover { color: var(--fg); }
+.so-tabs > [aria-selected="true"] { color: var(--fg); font-weight: 600; border-bottom-color: var(--fg); }
+.so-tabs .so-chip--count { height: 18px; padding: 0 5px; margin-left: 6px; }
+
+/* ─── Stepper ───────────────────────────────────────────────────────── */
+.so-stepper { display: flex; align-items: center; gap: 0; list-style: none; margin: 0; padding: 0; counter-reset: so-step; }
+.so-step { display: flex; align-items: center; gap: var(--space-2); flex: 1 1 0; min-width: 0; color: var(--muted); font-size: var(--text-sm); }
+.so-step::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border); margin: 0 var(--space-3); }
+.so-step:last-child { flex: none; }
+.so-step:last-child::after { display: none; }
+.so-step__num {
+  counter-increment: so-step;
+  display: inline-grid; place-items: center; flex: none;
+  width: 28px; height: 22px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--text-xs);
+}
+.so-step__num::before { content: counter(so-step, decimal-leading-zero); }
+.so-step[aria-current="step"] { color: var(--fg); font-weight: 600; }
+.so-step[aria-current="step"] .so-step__num { border-color: var(--fg); background: var(--fg); color: var(--bg); }
+.so-step--done .so-step__num { border-color: var(--so-rule); color: var(--fg); }
+.so-step--done .so-step__num::before { content: "✓"; font-family: var(--font-body); }
+@media (max-width: 520px) { .so-step__label { display: none; } .so-step[aria-current="step"] .so-step__label { display: inline; } }
+
+/* ─── Tree row (hierarchies) ────────────────────────────────────────── */
+.so-tree-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3);
+  min-height: var(--so-row);
+  padding: 0 var(--space-4) 0 calc(var(--space-2) + var(--depth, 0) * 20px);
+  border-top: 1px solid var(--border-soft);
+  background-image: repeating-linear-gradient(90deg, transparent 0 calc(var(--space-2) + 9px), var(--border-soft) calc(var(--space-2) + 9px) calc(var(--space-2) + 10px), transparent calc(var(--space-2) + 10px) calc(var(--space-2) + 20px));
+  background-size: calc(var(--depth, 0) * 20px) 100%;
+  background-repeat: no-repeat;
+}
+.so-tree-row__name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.so-tree-row__name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-tree-row .so-twisty { width: 24px; height: 24px; display: grid; place-items: center; color: var(--muted); border-radius: var(--radius-sm); }
+.so-tree-row .so-twisty:hover { background: var(--color-background-hover); color: var(--fg); }
+@media (max-width: 700px) {
+  .so-tree-row { grid-template-columns: minmax(0, 1fr) auto; padding-right: var(--space-3); }
+  .so-tree-row > :nth-child(3) { display: none; }  /* source column: dashed chip already says "inherited" */
+}
+.so-tree-row[aria-selected="true"] { background-color: var(--so-accent-tint); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* ─── Empty + skeleton (hatch) ──────────────────────────────────────── */
+.so-empty {
+  display: grid; justify-items: start; gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--so-hatch);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.so-empty__line { font-family: var(--font-body); font-weight: 400; font-size: var(--text-sm); }
+.so-empty p { margin: 0; color: var(--fg); background: var(--bg); padding: 0 4px; margin-left: -4px; }
+.so-skel { display: block; height: 12px; border-radius: var(--radius-sm); background: var(--so-hatch), var(--surface-warm); background-size: 12px 12px, auto; animation: so-hatch 1.2s linear infinite; }
+@keyframes so-hatch { to { background-position: 12px 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) { .so-skel { animation: none; } }
+
+/* ─── Field (own inputs inside own components only) ─────────────────── */
+.so-field { display: grid; gap: var(--space-1); }
+.so-field__label { font-size: var(--text-sm); font-weight: 600; }
+.so-field__hint { font-size: var(--text-sm); color: var(--muted); }
+.so-field__error { font-size: var(--text-sm); color: var(--so-danger-text); display: flex; gap: 6px; align-items: center; }
+
+/* ─── Split layout: list + sticky detail ────────────────────────────── */
+.so-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--space-6); align-items: start; }
+.so-split__aside { position: sticky; top: var(--space-4); }
+@media (max-width: 1100px) { .so-split { grid-template-columns: minmax(0, 1fr); } .so-split__aside { position: static; } }
+
+/* ─── Divider label ─────────────────────────────────────────────────── */
+.so-divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-8) 0 var(--space-3); }
+.so-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }

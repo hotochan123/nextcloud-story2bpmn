@@ -3,20 +3,19 @@
   SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <template>
-	<li v-if="next.head" class="line">
+	<li v-if="next.head" class="line path-head" :style="{ '--t': tree?.head?.depth ?? next.depth }">
+		<StoryRails :row="tree?.head" />
 		<span class="num" />
-		<span class="txt" :class="{ deep: next.depth > 1 }" :style="{ '--t': Math.max(next.depth - 1, 0) }">
-			<template v-for="(part, j) in lineParts(next.head)" :key="j">
-				<b v-if="part.subtype === 'sw'" class="sw">{{ part.text }}</b>
-				<span v-else-if="part.subtype === 'o'" :class="['o', 'o-' + part.object]"><svg v-if="part.object === 'signal'" class="tri" viewBox="0 0 10 9" aria-hidden="true"><polygon points="5,1 9,8 1,8" :class="{ filled: part.filled }" /></svg>{{ part.text }}</span>
-				<template v-else>{{ part.text }}</template>
-			</template>
+		<span class="txt">
+			<PathName v-if="tree?.head?.label" :label="tree.head.label" />
+			<StoryParts v-else :parts="lineParts(next.head)" />
 		</span>
 		<span />
 	</li>
-	<li class="line here-line" aria-current="step">
+	<li class="line here-line" aria-current="step" :style="{ '--t': next.depth }">
+		<StoryRails :row="tree?.here" />
 		<span class="num" />
-		<span class="txt" :style="{ '--t': next.depth }">
+		<span class="txt">
 			<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>{{ t('story2bpmn', 'continue here') }}
 		</span>
 		<span />
@@ -26,13 +25,19 @@
 <script>
 import { t } from '@nextcloud/l10n'
 import { lineParts } from '../lineParts.ts'
+import PathName from './PathName.vue'
+import StoryParts from './StoryParts.vue'
+import StoryRails from './StoryRails.vue'
 
 /** Where the story continues: the heading of the next path, if any, and the marker "continue here". */
 export default {
 	name: 'NextLine',
+	components: { PathName, StoryParts, StoryRails },
 	props: {
 		/** View.next: { head?, depth } */
 		next: { type: Object, required: true },
+		/** Its rows in the tree of the story card: { head, here } (src/storyTree.ts), or null. */
+		tree: { type: Object, default: null },
 	},
 	methods: { t, lineParts },
 }

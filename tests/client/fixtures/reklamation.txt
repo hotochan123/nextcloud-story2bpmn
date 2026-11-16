@@ -1,0 +1,37 @@
+ES BEGINNT mit Nachricht: [Reklamation geht ein] bei [@Kundenservice].
+[@Kundenservice] soll [Reklamation erfassen] in [#CRM].
+[@Kundenservice] soll [Kaufbeleg prüfen], Frist [!1 Tag].
+WENN [?Kaufbeleg vorhanden]
+→ ja:
+  [@Kundenservice] soll [Reklamationsnummer vergeben] in [#CRM].
+  ZUSAMMEN.
+SONST → nein:
+  [@Kundenservice] soll [Kaufbeleg anfordern].
+  WARTEN AUF [Kaufbeleg].
+  ZUSAMMEN.
+[@Kundenservice] soll [Rücksendeetikett erstellen] in [#Versandportal] mit [+Rücksendeetikett].
+WARTEN AUF [Rücksendung].
+[@Lager] soll [Rücksendung annehmen].
+[@Lager] soll [Ware sichten], Frist [!2 Tage].
+[@Qualitätssicherung] soll [Fehler untersuchen] in [#Prüfstand] mit [+Prüfbericht], Frist [!5 Tage].
+FALLS [!nach 5 Tagen], Schritt läuft weiter:
+  [@Kundenservice] soll [Kunde vertrösten].
+  ENDE: [Kunde informiert].
+WENN [?Mangel bestätigt]
+→ ja:
+  WENN [?Reparatur möglich]
+  → ja:
+    [@Werkstatt] soll [Ware reparieren], Frist [!7 Tage].
+    [@Werkstatt] soll [Funktion testen] in [#Prüfstand].
+    ZUSAMMEN.
+  SONST → nein:
+    [@Buchhaltung] soll [Gutschrift erstellen] in [#ERP] mit [+Gutschrift].
+    [@Buchhaltung] soll [Betrag erstatten], Frist [!3 Tage].
+    [@Lager] soll [Ware entsorgen].
+    ENDE mit Nachricht: [Erstattung abgeschlossen].
+  [@Lager] soll [Ware zurücksenden] in [#Versandportal].
+  ENDE mit Nachricht: [Reparatur abgeschlossen].
+SONST → nein:
+  [@Kundenservice] soll [Ablehnung begründen] mit [+Ablehnungsschreiben].
+  [@Lager] soll [Ware unrepariert zurücksenden] in [#Versandportal].
+  ENDE mit Nachricht: [Reklamation abgelehnt].

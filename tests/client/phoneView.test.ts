@@ -67,12 +67,12 @@ test('394 AK3 the ⋯ sheet of a line: the actions of today, proposal, show; nev
 	const merge: Move = { move: 'merge' };
 	for (const [m, i] of [[task, 1], [start, 0], [merge, 3]] as [Move, number][]) {
 		for (const inner of [false, true]) {
-			assert.deepEqual(sheetActions(m, i, inner, false), [...lineActions(m, i, inner), 'show']);
-			assert.deepEqual(sheetActions(m, i, inner, true), [...lineActions(m, i, inner), 'propose', 'show']);
+			assert.deepEqual(sheetActions(m, i, inner, false), [...lineActions(m, i, inner), 'asText', 'show']);
+			assert.deepEqual(sheetActions(m, i, inner, true), [...lineActions(m, i, inner), 'propose', 'asText', 'show']);
 			assert.ok(!(sheetActions(m, i, inner, true) as string[]).includes('after'));
 		}
 	}
-	assert.deepEqual(sheetActions(task, 1, false, false), ['edit', 'before', 'addException', 'remove', 'subprocess', 'show']);
+	assert.deepEqual(sheetActions(task, 1, false, false), ['edit', 'before', 'addException', 'remove', 'subprocess', 'asText', 'show']);
 	// Job 408: a step with an exception gets no second one
-	assert.deepEqual(sheetActions(task, 1, false, false, true), ['edit', 'before', 'remove', 'subprocess', 'show']);
+	assert.deepEqual(sheetActions(task, 1, false, false, true), ['edit', 'before', 'remove', 'subprocess', 'asText', 'show']);
 });

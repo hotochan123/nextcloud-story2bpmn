@@ -3,13 +3,40 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 // Edit as text: the story text is read back in the browser (core: read()), also in a worker (textChecker.worker.ts).
-import { tx, read, asSourceText, sameMoves } from './core/index.js';
+import { tx, read, lineNumbers, asSourceText, sameMoves } from './core/index.js';
 import type { Move, Line, Language } from './core/index.js';
 
 /** Content of the editor: the story text with indentation, as read() reads it back. */
 export const textFrom = (storyText: Line[]): string => asSourceText(storyText);
 
-export type TextResult = { moves: Move[]; number: number; errors: string[]; line?: number };
+/** Offset of the caret at the start of text line `line` (from 0), after its indentation; 0 outside the text (job 453). */
+export function lineCaret(text: string, line: number): number {
+	const lines = text.split('\n');
+	if (!Number.isInteger(line) || line < 0 || line >= lines.length) return 0;
+	let at = 0;
+	for (let k = 0; k < line; k++) at += lines[k].length + 1;
+	return at + (lines[line].match(/^\s*/)?.[0].length ?? 0);
+}
+
+/** numbers: per text line the number the story shows there (move + 1 on its level), null for a heading (job 449). */
+export type TextResult = { moves: Move[]; number: number; errors: string[]; line?: number; numbers: (number | null)[] };
+
+/** The numbers left of the lines of the story: move + 1, none for headings. */
+export const storyNumbers = (storyText: Line[]): (number | null)[] => storyText.map((l) => (l.move === undefined ? null : l.move + 1));
+
+/**
+ * The numbers of the editor's number column (job 449). The text as opened: the story's own (it numbers what
+ * can come at any time in the order it was told). A text the last check read: its numbers, which the story
+ * has once it is applied. Typed on since: counted from the text at once.
+ */
+export function editorNumbers(text: string, start: { text: string; numbers: (number | null)[] } | null, checked: { text: string | null; numbers?: (number | null)[] } | null, language: Language): (number | null)[] {
+	if (start && text === start.text && start.numbers.length === text.split('\n').length) return start.numbers;
+	if (checked?.numbers && checked.text === text) return checked.numbers;
+	return lineNumbers(text, language);
+}
+
+/** A message of read() without its "Zeile n: " / "Line n: " (the editor shows the number on its own). */
+export const withoutLine = (error: string): string => error.replace(/^(?:Zeile|Line) \d+: /u, '');
 
 /**
  * Text -> moves. On an error no moves (the old state stays). The process name
@@ -18,8 +45,8 @@ export type TextResult = { moves: Move[]; number: number; errors: string[]; line
 export function textMoves(text: string, old: Move[], language: Language): TextResult {
 	// The old moves tell which of two steps of the same name an unchanged "continue at" leads to (job 402).
 	const r = read(text, language, old);
-	if (r.errors.length) return { moves: [], number: r.moves.length, errors: r.errors, ...(r.line !== undefined && { line: r.line }) };
-	return { moves: withProcess(r.moves, old), number: r.moves.length, errors: [] };
+	if (r.errors.length) return { moves: [], number: r.moves.length, errors: r.errors, ...(r.line !== undefined && { line: r.line }), numbers: r.numbers };
+	return { moves: withProcess(r.moves, old), number: r.moves.length, errors: [], numbers: r.numbers };
 }
 
 /** Process name of the old start move onto the new moves (it is not in the story text). */
@@ -106,9 +133,9 @@ export const helpPattern = (language: Language): string[] => [
 	tx(language, 'WARTEN AUF SIGNAL [Lieferstopp ausgerufen]  ·  SIGNAL SENDEN [Lieferstopp ausgerufen]', 'WAIT FOR SIGNAL [delivery stop declared]  ·  SEND SIGNAL [delivery stop declared]'),
 	tx(language, 'WENN [?Frage]  ·  → ja:  ·  → …:  ·  SONST → nein:', 'IF [?question]  ·  → yes:  ·  → …:  ·  ELSE → no:'),
 	tx(language, 'GLEICHZEITIG:  ·  – erster Strang:  ·  – zweiter Strang:  ·  – dritter Strang: …', 'IN PARALLEL:  ·  – first branch:  ·  – second branch:  ·  – third branch: …'),
-	tx(language, 'FALLS [Abweichung]:', 'IN CASE OF [deviation]:'),
-	tx(language, 'ZUSAMMEN.  ·  WEITER BEI [Schritt].', 'MERGE.  ·  CONTINUE AT [step].'),
-	tx(language, 'WEITER AUF DEM WEG „Frage“ → ja:', 'BACK ON THE PATH “question” → yes:'),
+	tx(language, 'AUSNAHME [Abweichung]:', 'EXCEPTION [deviation]:'),
+	tx(language, 'ZUSAMMENFÜHREN.  ·  WEITER BEI [Schritt].', 'MERGE.  ·  CONTINUE AT [step].'),
+	tx(language, 'WIEDER AUF DEM WEG „Frage“ → ja:', 'BACK ON THE PATH “question” → yes:'),
 	tx(language, 'ENDE: [Zustand].  ·  ENDE mit Signal: [Zustand].', 'END: [state].  ·  END with a signal: [state].'),
 	tx(language, '[@Stelle] soll [Schritt], MIT TEILABLAUF.  ·  am Ende: TEILABLAUF [Schritt]:  ·  ES BEGINNT.', '[@role] shall [step], WITH SUBPROCESS.  ·  at the end: SUBPROCESS [step]:  ·  IT STARTS.'),
 ];

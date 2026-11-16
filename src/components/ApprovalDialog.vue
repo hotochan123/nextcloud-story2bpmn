@@ -7,12 +7,9 @@
 		:buttons="buttons"
 		size="normal"
 		@closing="$emit('close')">
-		<div class="story2bpmn-ask">
+		<div class="story2bpmn-workshop story2bpmn-ask">
 			<p>
 				{{ t('story2bpmn', 'The saved state of today is put forward for approval.') }}
-				<template v-if="counts">
-					{{ t('story2bpmn', 'Compared with valid version {number}: {new} new, {changed} changed, {removed} removed.', { number: counts.number, new: counts.new, changed: counts.changed, removed: counts.removed }) }}
-				</template>
 			</p>
 			<label class="field-label" for="story2bpmn-ask-owner">{{ t('story2bpmn', 'Process owner') }}</label>
 			<NcSelect v-model="owner"
@@ -51,6 +48,16 @@
 				<li>{{ t('story2bpmn', 'A comment on the working file mentions the process owner; Nextcloud notifies them.') }}</li>
 				<li>{{ t('story2bpmn', 'Changing the story afterwards withdraws the request.') }}</li>
 			</ol>
+			<!-- View B2 (job 450): the comparison with the last valid version as a register. -->
+			<section v-if="counts && rows" class="so-panel ask-diff" :aria-label="t('story2bpmn', 'Comparison with valid version {number}', { number: counts.number })">
+				<div class="so-panel__head">
+					<span class="so-rubric">{{ t('story2bpmn', 'Comparison with') }} <b>{{ t('story2bpmn', 'Valid version {number}', { number: counts.number }) }}</b></span>
+					<span class="so-rubric ask-counts"><template v-for="(f, i) in figures(t('story2bpmn', '{new} new · {changed} changed · {removed} removed', { new: counts.new, changed: counts.changed, removed: counts.removed }))" :key="i"><span v-if="f.num" class="so-num">{{ f.text }}</span><template v-else>{{ f.text }}</template></template></span>
+				</div>
+				<div class="ask-diff-body">
+					<DiffList :rows="rows" />
+				</div>
+			</section>
 		</div>
 	</NcDialog>
 </template>
@@ -64,16 +71,20 @@ import NcSelect from '@nextcloud/vue/components/NcSelect'
 import { findUsers, shares, fileRights, shareForEdit } from '../nextcloudApi.js'
 import { shareOffer, editShareRequest, rightsOf, prefillOwner } from '../approval.ts'
 import { isUid } from '../core/index.js'
+import { figures } from '../headChips.ts'
+import DiffList from './DiffList.vue'
 
 export default {
 	name: 'ApprovalDialog',
-	components: { NcButton, NcCheckboxRadioSwitch, NcDialog, NcSelect },
+	components: { DiffList, NcButton, NcCheckboxRadioSwitch, NcDialog, NcSelect },
 	props: {
 		fileId: { type: Number, required: true },
 		filePath: { type: String, default: '' },
 		approval: { type: Object, default: null },
 		/** { number, new, changed, removed } against the valid version, or null. */
 		counts: { type: Object, default: null },
+		/** The rows of the comparison (diffRows), or null without a valid version. */
+		rows: { type: Array, default: null },
 		language: { type: String, required: true },
 	},
 	emits: ['send', 'close'],
@@ -98,7 +109,7 @@ export default {
 		buttons() {
 			return [
 				{ label: t('story2bpmn', 'Cancel'), variant: 'tertiary' },
-				{ label: t('story2bpmn', 'Send request'), variant: 'primary', disabled: !this.owner, callback: () => this.send() },
+				{ label: t('story2bpmn', 'Ask for approval'), variant: 'primary', disabled: !this.owner, callback: () => this.send() },
 			]
 		},
 		/** 'none', 'hint' or 'button': can the chosen person change the file (as far as the shares tell)? */
@@ -126,6 +137,7 @@ export default {
 	},
 	methods: {
 		t,
+		figures,
 		/** The file's process owner, preselected with the server's name when the search finds exactly that id. */
 		async prefill() {
 			const o = this.approval?.owner
@@ -180,11 +192,14 @@ export default {
 </script>
 
 <style scoped>
-.story2bpmn-ask { display: grid; gap: 8px; padding-bottom: 8px; }
+.story2bpmn-ask { display: grid; gap: 8px; padding-bottom: 8px; min-height: 0; background: transparent; }
+.ask-diff { margin-top: 8px; }
+.ask-diff .so-panel__head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.ask-diff-body { max-height: 50vh; overflow: auto; }
 .story2bpmn-ask p { margin: 0; }
 .field-label { font-weight: 600; margin-top: 6px; }
-.field-hint.warn { color: var(--color-warning-text, #8a5a00); font-size: 13.5px; display: grid; gap: 6px; justify-items: start; }
-.share-error { color: var(--color-error-text, #b00020); }
+.field-hint.warn { color: var(--so-warn-text); font-size: 13.5px; display: grid; gap: 6px; justify-items: start; }
+.share-error { color: var(--so-danger-text); }
 @media (pointer: coarse) { .share-button { min-height: 44px; } }
 .note { width: 100%; min-height: 72px; font: inherit; }
 .what-happens { margin: 4px 0 0 18px; padding: 0; color: var(--color-text-maxcontrast); font-size: 13.5px; }

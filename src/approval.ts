@@ -676,3 +676,114 @@ export function editShareRequest(shareList: Share[], uid: string): { method: 'PU
 /** `oc:permissions` of WebDAV ("RGDNVW…") as the rights the dialog needs. */
 export const rightsOf = (permissions: string, ownerId: string): FileRights =>
 	({ canShare: permissions.includes('R'), canEdit: permissions.includes('W'), ownerId })
+
+// ---------- Approval sidebar and dialog (job 450, Soothing 4) ----------
+
+export type DecidedProposal = OpenProposal & { decision: Decision | null };
+
+const DECISION = /^(Angenommen: Vorschlag zu Zeile|Accepted: proposal on line|Abgelehnt: Vorschlag zu Zeile|Rejected: proposal on line|Erledigt: Bemerkung zu Zeile|Done: remark on line) (\d{1,6}) (?:\(„([^\n]*)“\)|\("([^\n]*)"\))\.$/
+const DECISION_KIND: Record<string, Decision> = {
+	'Angenommen: Vorschlag zu Zeile': 'accepted', 'Accepted: proposal on line': 'accepted',
+	'Abgelehnt: Vorschlag zu Zeile': 'rejected', 'Rejected: proposal on line': 'rejected',
+	'Erledigt: Bemerkung zu Zeile': 'done', 'Done: remark on line': 'done',
+}
+
+/** A decision comment (decisionComment, German or English): kind, line and quote; null for any other comment. */
+export function parseDecision(message: unknown): { kind: Decision; line: number; quote: string } | null {
+	if (typeof message !== 'string' || message.length > MAX_COMMENT) return null
+	const m = message.trim().match(DECISION)
+	return m ? { kind: DECISION_KIND[m[1]], line: Number(m[2]), quote: m[3] ?? m[4] ?? '' } : null
+}
+
+/**
+ * Decided proposals on the valid version (their ids in `decided`), newest first. The decision is read from
+ * the decision comments (decisionComment): taken in the order of `decided` (the order of the decisions), each
+ * proposal gets the first decision comment not used yet that was written after it and names its line and
+ * quote; null without one. Shown only, nothing trusts it.
+ */
+export function decidedProposals(comments: Comment[], a: Approval | null | undefined): DecidedProposal[] {
+	if (!a?.valid) return []
+	const story = validStory(a)
+	const lines = validLines(a)
+	const byId = new Map(comments.map((c) => [String(c.id), c]))
+	const decisions = comments
+		.map((c) => ({ c, d: parseDecision(c.message) }))
+		.filter((x): x is { c: Comment; d: NonNullable<ReturnType<typeof parseDecision>> } => !!x.d)
+		.sort((x, y) => order(x.c) - order(y.c))
+	const used = new Set<string>()
+	const out: DecidedProposal[] = []
+	for (const id of new Set(a.decided)) {
+		const c = byId.get(id)
+		const p = c && parseProposal(c.message)
+		if (!c || !p || p.version !== a.valid.number) continue
+		const at = validIndexOf(a, p, story)
+		if (at === null) continue
+		const quote = quoteOf(p.label, lines[at] ?? '')
+		const hit = decisions.find((x) => !used.has(String(x.c.id)) && order(x.c) > order(c) && x.d.line === p.line && x.d.quote === quote)
+		if (hit) used.add(String(hit.c.id))
+		out.push({ ...p, id: String(c.id), actorId: c.actorId, actorName: c.actorName, date: c.date, decision: hit ? hit.d.kind : null })
+	}
+	return out.sort((x, y) => Number(y.id) - Number(x.id))
+}
+
+export type HistoryEntry =
+	| { kind: 'request'; id: string; date: string; by: string; owner: string; note: string; open: boolean }
+	| { kind: 'approved'; id: string; date: string; by: string; number: number };
+
+/**
+ * What the comments tell about approval, newest first: each request of one account to another (a request
+ * to oneself is left out) and each approval comment whose writer was asked by another account before
+ * (the rule of confirmApproval, without the check code: older states are not at hand). The request is
+ * open when it is the running request Nextcloud confirms (`trusted.request`).
+ */
+export function approvalHistory(comments: Comment[], trusted: Approval | null | undefined): HistoryEntry[] {
+	const requests = comments
+		.map((c) => ({ c, uid: requestedOf(c.message) }))
+		.filter((r): r is { c: Comment; uid: string } => !!r.uid && !!r.c.actorId && r.uid !== r.c.actorId)
+	const openId = trusted?.state === 'review' && trusted.owner
+		? requests.filter((r) => r.uid === trusted.owner!.uid).sort((x, y) => order(y.c) - order(x.c))[0]?.c.id
+		: undefined
+	const out: (HistoryEntry & { at: number })[] = []
+	for (const r of requests) {
+		const name = r.c.mentions?.find((m) => m.uid === r.uid)?.name || r.uid
+		const msg = r.c.message.replace(/\r\n/g, '\n')
+		const cut = msg.indexOf('\n\n')
+		out.push({ kind: 'request', id: String(r.c.id), date: r.c.date, by: r.c.actorName || r.c.actorId, owner: name, note: cut < 0 ? '' : msg.slice(cut + 2).trim(), open: openId !== undefined && String(r.c.id) === String(openId), at: order(r.c) })
+	}
+	for (const c of comments) {
+		const p = parseApproved(c.message)
+		if (!p || !c.actorId) continue
+		if (!requests.some((r) => r.uid === c.actorId && order(r.c) < order(c))) continue
+		out.push({ kind: 'approved', id: String(c.id), date: c.date, by: c.actorName || c.actorId, number: p.number, at: order(c) })
+	}
+	return out.sort((x, y) => y.at - x.at).map(({ at: _at, ...e }) => e as HistoryEntry)
+}
+
+/** Chip of a named Nextcloud version: 'ok' for the confirmed valid version, 'plain' for an earlier valid one, else 'closed'. */
+export function versionChip(label: string, validNumber: number | null | undefined): 'ok' | 'plain' | 'closed' {
+	const m = label.trim().match(/^(?:Gültige Version|Valid version) (\d{1,7})$/)
+	if (!m) return 'closed'
+	return validNumber && Number(m[1]) === validNumber ? 'ok' : 'plain'
+}
+
+export type DiffRow = { kind: 'same' | 'new' | 'changed' | 'removed'; number: string; text: string; old?: string };
+
+/**
+ * The rows of a comparison register: the lines that are not the same, with the number the story shows on
+ * the line (move + 1, empty on a heading; "–" for a removed line). `storyText`: the lines of the state now;
+ * `all`: the same lines too ("All lines" of the comparison in the story).
+ */
+export function diffRows(diff: DiffLine[], storyText: Line[], all = false): DiffRow[] {
+	const out: DiffRow[] = []
+	for (const d of diff) {
+		if (d.kind === 'same' && !all) continue
+		if (d.kind === 'removed') {
+			out.push({ kind: 'removed', number: '–', text: d.old.trim() })
+			continue
+		}
+		const l = storyText[d.line - 1]
+		const number = l?.move === undefined ? '' : String(l.move + 1)
+		out.push(d.kind === 'changed' ? { kind: 'changed', number, text: d.text.trim(), old: d.old.trim() } : { kind: d.kind, number, text: d.text.trim() })
+	}
+	return out
+}

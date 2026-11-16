@@ -4,21 +4,21 @@
  */
 // State logic of the interface: pure, without Vue and without DOM (tests/client/workbench.test.ts).
 // The state is the list of moves; every change replays it in the core.
-import { MAX_PATHS, tell, stillLeads, splice, replaceMove, removeBranch, deletePath, addPaths, tellOpen, reopenPath, insertBefore, addException, addTrigger, INSERTABLE, pathCount as branchPaths, BRANCHES, preview, levels, hasSubprocess, subIR, descends, sameMoves, NOT_ON_OPEN } from './core/index.js';
+import { MAX_PATHS, tx, tell, stillLeads, splice, replaceMove, removeBranch, noEnd, deletePath, addPaths, tellOpen, reopenPath, insertBefore, addException, addTrigger, swapPaths, joinAllFrom, joinAllOffered, moveOffered, moveEnds, moveTargets, moveSteps, pathLabel, moveLine, INSERTABLE, pathCount as branchPaths, BRANCHES, preview, levels, hasSubprocess, subIR, descends, sameMoves, NOT_ON_OPEN } from './core/index.js';
 import type { Move, Line, Target, Issue, Language, ProcessIR, Band, TellOptions, StoryState } from './core/index.js';
 import type { EventKind } from './core/ir.js';
 import { played } from './workingFile.js';
 
 // The form, the parts of a line and the keys live in their own modules; re-exported so imports stay.
-export { fields, signalFields, morePaths, branchCount, pathCount, addPath, removePath, switchKind, forEachSwitched, prefill, requiredEmpty, moveFromForm } from './moveForm.js';
-export type { FieldKind, Field } from './moveForm.js';
+export { fields, signalFields, morePaths, branchCount, pathCount, addPath, removePath, switchKind, switchBranch, branchMove, BRANCH_KINDS, forEachSwitched, prefill, requiredEmpty, moveFromForm, roleUses, renameRole, roleChange } from './moveForm.js';
+export type { FieldKind, Field, RoleChange } from './moveForm.js';
 export { signalLine, lineParts, textParts } from './lineParts.js';
 export type { Part } from './lineParts.js';
 export { digitKey, keyEnv, storyKeys } from './storyKeys.js';
 export type { KeyEnv } from './storyKeys.js';
 export { played, loadStory, fileSuggestion, outputName, unsaved, outputs, copyState, fileXml, saveThenPublish } from './workingFile.js';
 export type { Loaded, Outputs, SaveResult, PublishResult } from './workingFile.js';
-export { textFrom, textMoves, withProcess, sameStory, textChecker, checkText, helpPattern } from './textEdit.js';
+export { textFrom, textMoves, withProcess, sameStory, textChecker, checkText, helpPattern, storyNumbers, editorNumbers, withoutLine, lineCaret } from './textEdit.js';
 export type { TextResult, CheckerWorker } from './textEdit.js';
 
 export type MoveKind = Move['move'];
@@ -240,11 +240,15 @@ export function removeStep(moves: Move[], i: number, language: Language, opts: T
 	if (id !== undefined)
 		for (const [j, m] of moves.entries())
 			if (j !== i && m.move === 'goTo' && m.target === id && !(e >= 0 && onException(j))) return stillLeads(j, old.ir, old.nodes, id, language);
-	if (e < 0) return { moves: remove(moves, i, language, opts) };
+	if (e < 0) return withEnd(old, remove(moves, i, language, opts), i, language, opts);
 	const r = removeBranch(moves, e, 1, language, opts);
 	if ('error' in r) return r;
 	// The step comes before its exception: its index is unchanged.
-	return { moves: remove(r.moves, i, language, opts) };
+	return withEnd(tell(r.moves, language, opts), remove(r.moves, i, language, opts), i, language, opts);
+}
+/** The story without move i, or the refusal when no end can be reached from part of it any more (job 452). */
+function withEnd(old: StoryState, out: Move[], i: number, language: Language, opts: TellOptions): { moves: Move[] } | { error: string; line?: number } {
+	return noEnd(old, out, (k) => (k < i ? k : k + 1), language, opts) ?? { moves: out };
 }
 /** The whole story after the moves of the level shown changed: on a subprocess level only its task changes.
  *  `any`: the flow of what can come at any time in that subprocess changed (job 397). */
@@ -275,12 +279,15 @@ export const hasFields = (subtype: MoveKind): boolean => !WITHOUT_FIELDS.include
 /** drop:<n>: delete path n of a branch with three paths or more and keep the others (job 398). */
 /** reopen: a merge, "continue at" or an end becomes a path still open again (job 400). */
 /** addException: an exception on a step, its path still open; addTrigger: a further trigger on the first line (job 408). */
-export type Action = 'edit' | 'before' | 'remove' | 'subprocess' | 'addPath' | 'tell' | 'reopen' | 'addException' | 'addTrigger' | `keep:${number}` | `drop:${number}`;
+/** joinAll: "From here on for all paths", the path merges before the line and the rest applies to all (job 456). */
+/** move: "Move …", the line (and the lines after it up to a chosen one) goes elsewhere (job 457). */
+export type Action = 'edit' | 'before' | 'remove' | 'subprocess' | 'addPath' | 'tell' | 'reopen' | 'joinAll' | 'move' | 'addException' | 'addTrigger' | `keep:${number}` | `drop:${number}`;
 /** What the menu offers on a line. Plain deleting only for tasks, waiting and signals; a branch is
  *  deleted by keeping one of its paths. Merge, "continue at" and pulling forward belong to their
  *  path and go with it. `inner`: a line of a subprocess (no step before the plain start is
- *  impossible there, and no flow behind a task: one level only). */
-export function lineActions(move: Move, index: number, inner = false, hasException = false): Action[] {
+ *  impossible there, and no flow behind a task: one level only). `joinable`: the line offers "From here
+ *  on for all paths" (joinableLines). `movable`: the line offers "Move …" (movableLines). */
+export function lineActions(move: Move, index: number, inner = false, hasException = false, joinable = false, movable = false): Action[] {
 	const a: Action[] = [];
 	if (hasFields(move.move)) a.push('edit');
 	// The first trigger of the main flow takes further triggers (job 408).
@@ -297,6 +304,8 @@ export function lineActions(move: Move, index: number, inner = false, hasExcepti
 	if (move.move === 'task' && !hasException) a.push('addException');
 	// What closes a path can be taken back: the path is open again, nothing else goes (job 400).
 	if (move.move === 'merge' || move.move === 'goTo' || move.move === 'end') a.push('reopen');
+	if (joinable) a.push('joinAll');
+	if (movable && !hasException) a.push('move');
 	if (move.move === 'task' || move.move === 'wait' || move.move === 'sendSignal') a.push('remove');
 	if (move.move === 'task' && !inner) a.push('subprocess');
 	// The exception path is a side path: deleting it keeps the normal path.
@@ -319,7 +328,48 @@ export const droppedPath = (a: string): number | null => (/^drop:\d+$/.test(a) ?
 // dropPath: deletes path `path` of the branch in move i, the other paths stay; error when something else still leads into what goes.
 // reopen: reopens the path that move i closes (merge, "continue at", end); error when it cannot be reopened there.
 // keepPath: deletes the branch in move i and keeps path `keep`; error when something else still leads into what goes.
-export { deletePath as dropPath, reopenPath as reopen, removeBranch as keepPath };
+// swapPath: swaps path `path` of the branch in move i with the path after it, their moves along (job 455); error when it cannot be done there.
+// joinAll: "From here on for all paths" at move i (job 456); `at` of the result: the new index of that move.
+// moveSteps: "Move …" of the lines i to e before old move pos (job 457); `at` of the result: the new index of move i.
+export { moveSteps };
+export { deletePath as dropPath, reopenPath as reopen, removeBranch as keepPath, swapPaths as swapPath, joinAllFrom as joinAll };
+
+/** The moves of a level whose line offers "From here on for all paths" (job 456): one replay for all lines. */
+export function joinableLines(moves: Move[], language: Language, opts: TellOptions = {}): Set<number> {
+	const { trace } = tell(moves, language, opts);
+	return new Set(moves.flatMap((_, i) => (joinAllOffered(moves, i, trace) ? [i] : [])));
+}
+
+/** The moves of a level whose line offers "Move …" (job 457): one replay for all lines. */
+export function movableLines(moves: Move[], language: Language, opts: TellOptions = {}): Set<number> {
+	const s = tell(moves, language, opts);
+	return new Set(moves.flatMap((_, i) => (moveOffered(moves, i, s) ? [i] : [])));
+}
+
+/** A choice of the form "Move …": the line up to which lines go along, or a place to move to; `text`: the line in the diagram language. */
+export type MoveEnd = { e: number; text: string };
+/** path: name of the path; then `at` is the line of its branch and `text` that line (paths of two checks are often both "yes"). */
+export type MovePlace = { pos: number; after?: number; path?: string; at?: number; start?: true; text?: string };
+
+/**
+ * The choices of the form "Move …" at line i (job 457): up to which line, and where to for the lines i to e.
+ * Texts of lines and names of paths in the diagram language; the wording around them comes from t().
+ */
+export function moveChoices(moves: Move[], i: number, e: number, language: Language, opts: TellOptions = {}): { ends: MoveEnd[]; places: MovePlace[] } {
+	const s = tell(moves, language, opts);
+	const line = (j: number): string => {
+		const z = moves[j];
+		const name = z.move === 'goTo' ? s.ir.nodes.find((n) => n.id === z.target)?.name : undefined;
+		return moveLine(z, language, name);
+	};
+	const ends = moveEnds(moves, i, s).map((j) => ({ e: j, text: line(j) }));
+	const places = moveTargets(moves, i, e, s).map((x): MovePlace => {
+		if (x.after !== undefined) return { pos: x.pos, after: x.after, text: line(x.after) };
+		if (x.path) return { pos: x.pos, path: pathLabel(moves, x.path.at, x.path.n, language), at: x.path.at, text: line(x.path.at) };
+		return { pos: x.pos, start: true };
+	});
+	return { ends, places };
+}
 
 /**
  * Start values of the form "Add another path" on the line of a branch: the move with one empty path more,
@@ -334,13 +384,21 @@ export function withNewPath(move: Move): { start: Move; focus?: string } {
 	return { start: { ...move, more: [...more, move.no], moreKinds: [...kinds, move.noKind || 'message'], no: '', noKind: 'message' }, focus: 'no' };
 }
 
+/** Kind of a branch move as the edit form names it: '' (checked), 'first' or 'concurrent'. */
+const branchKind = (z: Move): string => (z.move === 'concurrent' ? 'concurrent' : z.move === 'decision' ? z.subtype ?? '' : z.move);
+
 /**
  * A changed line: a branch with more paths than before, while something is told after it, gets them
- * through addPaths (the new ones still open); anything else is replaced as it is.
+ * through addPaths (the new ones still open); anything else is replaced as it is. A branch switched to another
+ * kind (job 451) keeps its paths in their order; switching and adding paths at once is refused there, as the
+ * kinds put a new path in different places (before the otherwise path of a check, else last).
  */
 export function changeLine(moves: Move[], i: number, move: Move, language: Language, opts: TellOptions = {}): { moves: Move[] } | { error: string } {
 	const old = moves[i];
-	if (i < moves.length - 1 && (old?.move === 'decision' || old?.move === 'concurrent') && branchPaths(move) > branchPaths(old)) return addPaths(moves, i, move, language, opts);
+	if (i < moves.length - 1 && (old?.move === 'decision' || old?.move === 'concurrent') && branchPaths(move) > branchPaths(old)) {
+		if (branchKind(old) !== branchKind(move)) return { error: tx(language, 'Erst die Art wechseln, dann Wege hinzufügen', 'Change the kind first, then add paths') };
+		return addPaths(moves, i, move, language, opts);
+	}
 	return { moves: replace(moves, i, move, language, opts) };
 }
 

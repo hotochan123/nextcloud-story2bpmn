@@ -1,0 +1,259 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Soothing — tokens.css
+ *
+ * Calm tool system for Nextcloud apps. Layer on top of Nextcloud theming:
+ * every colour resolves to a Nextcloud CSS variable, so instance primary
+ * colour, dark mode and high-contrast themes come for free inside NC.
+ *
+ * Two parts:
+ *   1. NC shim — light defaults of the Nextcloud 34 variables. Inside
+ *      Nextcloud the server sets these on [data-theme-*]; the shim uses
+ *      :where() (zero specificity) so NC always wins. Outside NC
+ *      (open-design previews, standalone pages) it stands in for NC.
+ *   2. Soothing tokens — OD schema names (--bg, --fg, --accent …) plus
+ *      --so-* extensions. Components reference only these.
+ *
+ * Dark shim: @media (prefers-color-scheme: dark) unless data-theme="light",
+ * and [data-theme="dark"] explicitly. Values = NC 34 DarkTheme.php with
+ * default primary #00679e.
+ * ─────────────────────────────────────────────────────────────────────── */
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("fonts/IBMPlexMono-400.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("fonts/IBMPlexMono-500.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:where(:root) {
+  /* ─── 1. NC shim (light) ─────────────────────────────────────────── */
+  --color-main-background: #ffffff;
+  --color-background-hover: #f5f5f5;
+  --color-background-dark: #ededed;
+  --color-background-darker: #dbdbdb;
+  --color-main-text: #222222;
+  --color-text-maxcontrast: #6b6b6b;
+  --color-border: #ededed;
+  --color-border-dark: #dbdbdb;
+  --color-border-maxcontrast: #7d7d7d;
+  --color-primary-element: #00679e;
+  --color-primary-element-hover: #00507a;
+  --color-primary-element-text: #ffffff;
+  --color-primary-element-light: #e5eff5;
+  --color-primary-element-light-hover: #d9e3e8;
+  --color-primary-light-text: #00293f;
+  --color-element-error: #c90000;
+  --color-error: #ffe7e7;
+  --color-error-text: #8a0000;
+  --color-element-warning: #bf7900;
+  --color-warning: #ffeec5;
+  --color-warning-text: #664700;
+  --color-element-success: #099f05;
+  --color-success: #d8f3da;
+  --color-success-text: #005416;
+  --color-element-info: #0077c7;
+  --color-info: #d5f1fa;
+  --color-info-text: #0066ac;
+  --color-box-shadow-rgb: 77, 77, 77;
+  --font-face: system-ui, -apple-system, "Segoe UI", Roboto, Oxygen-Sans, Cantarell, Ubuntu, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif;
+  --default-font-size: 15px;
+  --default-grid-baseline: 4px;
+  --default-clickable-area: 34px;
+  --clickable-area-large: 48px;
+}
+
+/* Tokens are declared on :root AND body: Nextcloud sets its variables on
+   the element carrying [data-theme-*]. Re-declaring on body makes every
+   var() below resolve against the live NC values, not the shim. */
+:root, body {
+  /* ─── 2. Soothing tokens ─────────────────────────────────────────── */
+
+  /* Surface. Panels sit on the page colour and are separated by lines,
+     not by tone. --surface-warm is the quiet strip for panel heads,
+     table heads and footers. */
+  --bg: var(--color-main-background);
+  --surface: var(--color-main-background);
+  --surface-warm: var(--color-background-hover);
+  --so-surface-sunk: var(--color-background-dark);   /* bar tracks, wells */
+
+  /* Foreground ramp */
+  --fg: var(--color-main-text);
+  --fg-2: var(--color-main-text);
+  --muted: var(--color-text-maxcontrast);
+  --meta: var(--color-text-maxcontrast);
+
+  /* Lines. Three weights — hairline inside, frame outside, rule for
+     emphasis (selected row edge, active tab, totals). */
+  --border: var(--color-border-dark);
+  --border-soft: var(--color-border);
+  --so-rule: var(--color-border-maxcontrast);
+
+  /* Accent = instance primary. ≤2 visible uses per screen. */
+  --accent: var(--color-primary-element);
+  --accent-on: var(--color-primary-element-text);
+  --accent-hover: var(--color-primary-element-hover);
+  --accent-active: var(--color-primary-element-hover);
+  --so-accent-tint: var(--color-primary-element-light);
+  --so-accent-tint-hover: var(--color-primary-element-light-hover);
+  --so-accent-tint-text: var(--color-primary-light-text);
+
+  /* State. element = marks/glyphs/bars, tint = quiet fill, text = AA text
+     on tint. Never colour alone: every state ships a glyph + word. */
+  --success: var(--color-element-success);
+  --warn: var(--color-element-warning);
+  --danger: var(--color-element-error);
+  --info: var(--color-element-info);
+  --so-success-tint: var(--color-success);
+  --so-success-text: var(--color-success-text);
+  --so-warn-tint: var(--color-warning);
+  --so-warn-text: var(--color-warning-text);
+  --so-danger-tint: var(--color-error);
+  --so-danger-text: var(--color-error-text);
+  --so-info-tint: var(--color-info);
+  --so-info-text: var(--color-info-text);
+
+  /* Type. Body + headings use the instance font (NC --font-face, which
+     also carries the dyslexia-font setting). IBM Plex Mono only for
+     figures: numbers, deadlines, IDs. Labels stay in the instance font. */
+  --font-display: var(--font-face);
+  --font-body: var(--font-face);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  --text-xs: 11px;    /* ticks */
+  --text-sm: 13px;    /* NC --font-size-small; hints, table meta */
+  --text-base: 15px;  /* NC --default-font-size */
+  --text-lg: 17px;    /* panel titles */
+  --text-xl: 20px;    /* view titles */
+  --text-2xl: 24px;
+  --text-3xl: 32px;   /* key figure */
+  --text-4xl: 48px;   /* beamer / projected figure */
+  --leading-body: 1.55;
+  --leading-tight: 1.2;
+  --tracking-display: -0.01em;
+  --so-tracking-rubric: 0;  /* unused since 14.11. (labels in normal case) */
+
+  /* Space — NC 4px baseline */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --so-row: 40px;          /* dense row height (desktop) */
+  --so-target: 44px;       /* touch target (pointer: coarse) */
+
+  /* Layout */
+  --section-y-desktop: 32px;
+  --section-y-tablet: 24px;
+  --section-y-phone: 16px;
+  --container-max: 1120px;
+  --so-container-narrow: 720px;  /* single-column flows (vote, form) */
+  --container-gutter-desktop: 24px;
+  --container-gutter-tablet: 20px;
+  --container-gutter-phone: 16px;
+
+  /* Radius — small and consistent. NC components keep their own. */
+  --radius-sm: 3px;    /* inputs inside own components, bars */
+  --radius-md: 4px;    /* panels, notices, tables */
+  --radius-lg: 6px;    /* the rare large container */
+  --radius-pill: 9999px; /* chips, avatars, count bubbles */
+
+  /* Elevation — flat by default. Lines do the work. */
+  --elev-flat: none;
+  --elev-ring: 0 0 0 1px var(--border);
+  --elev-raised: 0 1px 0 rgba(var(--color-box-shadow-rgb), 0.08), 0 6px 20px -8px rgba(var(--color-box-shadow-rgb), 0.35);
+
+  /* Focus — 2px ring in accent with a page-colour gap, like NC */
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+
+  /* Motion — short, no bounce. Reduced motion zeroes both. */
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* Hatch — signature texture for skeletons, empty wells, "no data" */
+  --so-hatch: repeating-linear-gradient(135deg, var(--border-soft) 0 1px, transparent 1px 6px);
+}
+
+/* ─── NC shim (dark) ──────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :where(:root:not([data-theme="light"])) {
+    --color-main-background: #171717;
+    --color-background-hover: #212121;
+    --color-background-dark: #292929;
+    --color-background-darker: #3b3b3b;
+    --color-main-text: #ebebeb;
+    --color-text-maxcontrast: #999999;
+    --color-border: #292929;
+    --color-border-dark: #3b3b3b;
+    --color-border-maxcontrast: #7d7d7d;
+    --color-primary-element: #0091f2;
+    --color-primary-element-hover: #17a2ff;
+    --color-primary-element-text: #000000;
+    --color-primary-element-light: #14232c;
+    --color-primary-element-light-hover: #1f2e36;
+    --color-primary-light-text: #99c2d8;
+    --color-element-error: #ff5050;
+    --color-error: #552121;
+    --color-error-text: #ffcccc;
+    --color-element-warning: #ffcc00;
+    --color-warning: #3d3010;
+    --color-warning-text: #ffeec5;
+    --color-element-success: #40a330;
+    --color-success: #11321a;
+    --color-success-text: #d5f2dc;
+    --color-element-info: #0099e0;
+    --color-info: #003553;
+    --color-info-text: #00aeff;
+    --color-box-shadow-rgb: 0, 0, 0;
+  }
+}
+:where(:root[data-theme="dark"]) {
+  --color-main-background: #171717;
+  --color-background-hover: #212121;
+  --color-background-dark: #292929;
+  --color-background-darker: #3b3b3b;
+  --color-main-text: #ebebeb;
+  --color-text-maxcontrast: #999999;
+  --color-border: #292929;
+  --color-border-dark: #3b3b3b;
+  --color-border-maxcontrast: #7d7d7d;
+  --color-primary-element: #0091f2;
+  --color-primary-element-hover: #17a2ff;
+  --color-primary-element-text: #000000;
+  --color-primary-element-light: #14232c;
+  --color-primary-element-light-hover: #1f2e36;
+  --color-primary-light-text: #99c2d8;
+  --color-element-error: #ff5050;
+  --color-error: #552121;
+  --color-error-text: #ffcccc;
+  --color-element-warning: #ffcc00;
+  --color-warning: #3d3010;
+  --color-warning-text: #ffeec5;
+  --color-element-success: #40a330;
+  --color-success: #11321a;
+  --color-success-text: #d5f2dc;
+  --color-element-info: #0099e0;
+  --color-info: #003553;
+  --color-info-text: #00aeff;
+  --color-box-shadow-rgb: 0, 0, 0;
+}
+
+@media (pointer: coarse) {
+  :root, body { --so-row: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root, body { --motion-fast: 0ms; --motion-base: 0ms; }
+}

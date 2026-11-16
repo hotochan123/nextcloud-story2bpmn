@@ -8,7 +8,7 @@
 			<h2 id="story2bpmn-h-story">
 				{{ view.sub?.trigger ? t('story2bpmn', 'Story · at any time') : view.sub ? t('story2bpmn', 'Story · subprocess') : t('story2bpmn', 'Story') }}
 			</h2>
-			<span class="number">{{ moves.length ? n('story2bpmn', '%n move', '%n moves', moves.length) : '' }}</span>
+			<span class="number"><template v-for="(f, i) in figures(moves.length ? n('story2bpmn', '%n move', '%n moves', moves.length) : '')" :key="i"><span v-if="f.num" class="so-chip so-chip--count">{{ f.text }}</span><template v-else>{{ f.text }}</template></template></span>
 			<div class="right werkzeug story-tools">
 				<button type="button"
 					class="button quiet"
@@ -166,38 +166,20 @@
 					{{ t('story2bpmn', 'All lines') }}
 				</button>
 			</div>
-			<ol class="diff">
-				<li v-for="(d, i) in shownDiff" :key="i" :class="'diff-' + d.kind">
-					<span class="diff-word">{{ diffWord(d.kind) }}</span>
-					<span class="diff-text">
-						<component :is="d.kind === 'removed' ? 's' : 'span'">
-							<template v-for="(part, j) in lineParts((d.kind === 'removed' ? d.old : d.text).trim())" :key="j">
-								<b v-if="part.subtype === 'sw'" class="sw">{{ part.text }}</b>
-								<span v-else-if="part.subtype === 'o'" :class="['o', 'o-' + part.object]">{{ part.text }}</span>
-								<template v-else>{{ part.text }}</template>
-							</template>
-						</component>
-						<span v-if="d.kind === 'changed'" class="diff-old">{{ t('story2bpmn', 'Before:') }} {{ d.old.trim() }}</span>
-					</span>
-				</li>
-				<li v-if="!shownDiff.length" class="diff-same">
-					<span class="diff-text">{{ t('story2bpmn', 'No changes.') }}</span>
-				</li>
-			</ol>
-			<p class="diff-legend">
-				{{ t('story2bpmn', 'Green: new. Yellow: changed, the old wording below. Red and struck through: removed. Each change also carries a word. The diagram frames new and changed shapes.') }}
-			</p>
+			<DiffList :rows="diffRows(diff, view.storyText, compareAll)" />
 		</section>
 
 		<div v-if="moves.length" v-show="!textMode && !compareOn" class="key" aria-hidden="true">
-			<span>{{ t('story2bpmn', 'Colours:') }}</span>
-			<span v-for="(name, a) in keyObjects" :key="a" :class="['o', 'o-' + a]">{{ name }}</span>
+			<span class="key-label">{{ t('story2bpmn', 'Sentence parts:') }}</span>
+			<span v-for="(name, a) in keyObjects" :key="a"><StoryParts :parts="[{ subtype: 'o', object: a, text: name }]" /></span>
 		</div>
 
 		<TextEditor v-if="textMode"
 			ref="editor"
 			:start="textStart"
+			:start-numbers="textNumbers"
 			:initial="textInitial"
+			:cursor-line="textCursor"
 			:previous="textPrevious"
 			:language="language"
 			:busy="busy"
@@ -209,11 +191,13 @@
 		<ol v-show="!textMode && !compareOn" class="course">
 			<template v-for="(l, i) in view.lines" :key="i">
 			<!-- What can come at any time is told after the main flow: the marker stays above it. -->
-			<NextLine v-if="i === nextAt" :next="panel.next" />
+			<NextLine v-if="i === nextAt" :next="panel.next" :tree="tree.next" />
 			<li class="line"
-				:class="{ marked: marked(l), chosen: l.move !== undefined && l.move === chosenLine, choosable: l.move !== undefined, fresh: l.move !== undefined && l.move === fresh, flash: l.move !== undefined && l.move === flashLine }"
+				:class="{ marked: marked(l), chosen: l.move !== undefined && l.move === chosenLine, choosable: l.move !== undefined, fresh: l.move !== undefined && l.move === fresh, flash: l.move !== undefined && l.move === flashLine, 'path-head': tree.lines[i].head, section: tree.lines[i].section, open: (l.move !== undefined && menu === l.move) || (!!l.path && menu === pathKey(l.path)) }"
+				:style="{ '--t': tree.lines[i].depth }"
 				:data-line="l.move"
 				@click="lineClick($event, l)">
+				<StoryRails :row="tree.lines[i]" />
 				<span class="num">
 					<button v-if="l.move !== undefined"
 						type="button"
@@ -222,12 +206,9 @@
 						:aria-label="t('story2bpmn', 'Show line {number} in the diagram', { number: l.move + 1 })"
 						@click.stop="$emit('choose', l.move)">{{ l.move + 1 }}</button>
 				</span>
-				<span class="txt" :class="{ deep: l.depth > 0 }" :style="{ '--t': l.depth }">
-					<template v-for="(part, j) in lineParts(l.text)" :key="j">
-						<b v-if="part.subtype === 'sw'" class="sw">{{ part.text }}</b>
-						<span v-else-if="part.subtype === 'o'" :class="['o', 'o-' + part.object]" :title="objects[part.object]"><svg v-if="part.object === 'signal'" class="tri" viewBox="0 0 10 9" aria-hidden="true"><polygon points="5,1 9,8 1,8" :class="{ filled: part.filled }" /></svg><span class="sr">{{ part.sub ? t('story2bpmn', 'Subprocess') : objects[part.object] }}: </span>{{ part.text }}<svg v-if="part.sub" class="plus" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" /><path d="M5 2.5v5M2.5 5h5" /></svg></span>
-						<template v-else>{{ part.text }}</template>
-					</template>
+				<span class="txt">
+					<PathName v-if="tree.lines[i].label" :label="tree.lines[i].label" />
+					<StoryParts v-else :parts="lineParts(l.text)" :names="objects" />
 					<span v-if="l.move !== undefined && view.bare?.includes(l.move)" class="bare-note">{{ t('story2bpmn', 'No path has a step yet – the branch appears in the diagram once one is added') }}</span>
 					<span v-if="l.move !== undefined && l.move === fresh" class="new-tag">{{ t('story2bpmn', 'New') }}</span>
 					<span v-if="proposalTags[view.lineOffset + i]" class="vtag">{{ proposalTags[view.lineOffset + i] === 'remark' ? t('story2bpmn', 'Remark') : t('story2bpmn', 'Proposal') }}</span>
@@ -242,7 +223,7 @@
 						</button>
 					</template>
 				</span>
-				<span>
+				<span class="more-cell">
 					<button v-if="l.move !== undefined && moves[l.move]"
 						type="button"
 						class="button more"
@@ -253,7 +234,30 @@
 						@click="toggleMenu(l.move)">
 						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" fill="currentColor" /><circle cx="12" cy="12" r="1.3" fill="currentColor" /><circle cx="19" cy="12" r="1.3" fill="currentColor" /></svg>
 					</button>
+					<!-- A path heading: move the path up or down among the paths of its branch (job 455). -->
+					<button v-else-if="l.path && pathActions(moves, l.path).length"
+						type="button"
+						class="button more"
+						:aria-expanded="menu === pathKey(l.path) ? 'true' : 'false'"
+						:aria-label="t('story2bpmn', 'Edit path {name}', { name: pathName(tree.lines[i].label) })"
+						:title="t('story2bpmn', 'Edit path')"
+						:data-menu="pathKey(l.path)"
+						@click="toggleMenu(pathKey(l.path))">
+						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" fill="currentColor" /><circle cx="12" cy="12" r="1.3" fill="currentColor" /><circle cx="19" cy="12" r="1.3" fill="currentColor" /></svg>
+					</button>
 				</span>
+				<div v-if="!phone && l.path && menu === pathKey(l.path)" class="line-actions" :style="{ '--t': tree.lines[i].depth }">
+					<div class="menu-group">
+						<button v-for="a in pathActions(moves, l.path)"
+							:key="a"
+							type="button"
+							class="button menu-item"
+							:disabled="busy"
+							@click="swap(a, l.path)">
+							{{ pathText(a) }}
+						</button>
+					</div>
+				</div>
 				<!-- Phone: a chosen line offers the way to its shape and its ⋯ sheet. -->
 				<div v-if="phone && l.move !== undefined && l.move === chosenLine && moves[l.move]" class="line-actions line-tap" :style="{ '--t': l.depth }">
 					<button type="button" class="button" @click="$emit('show', l.move)">
@@ -264,23 +268,18 @@
 						{{ t('story2bpmn', 'More') }}
 					</button>
 				</div>
-				<div v-if="!phone && l.move !== undefined && menu === l.move" class="line-actions" :style="{ '--t': l.depth }">
-					<button v-for="a in actionsOf(l.move)"
-						:key="a"
-						type="button"
-						class="button"
-						:class="{ armed: deleteArmed === a }"
-						:disabled="busy"
-						@click="action(a, l.move, $event)">
-						{{ actionText(a, l.move) }}
-					</button>
-					<button v-if="canPropose && validLine(view.lineOffset + i) !== null"
-						type="button"
-						class="button"
-						:disabled="busy"
-						@click="openProposal(view.lineOffset + i)">
-						{{ t('story2bpmn', 'Make a proposal') }}
-					</button>
+				<div v-if="!phone && l.move !== undefined && menu === l.move" class="line-actions" :style="{ '--t': tree.lines[i].depth }">
+					<div v-for="(g, k) in groupsOf(l.move, i)" :key="k" class="menu-group">
+						<button v-for="a in g"
+							:key="a"
+							type="button"
+							class="button menu-item"
+							:class="{ armed: deleteArmed === a, danger: a === 'remove' }"
+							:disabled="busy"
+							@click="a === 'propose' ? openProposal(view.lineOffset + i) : action(a, l.move, $event)">
+							{{ a === 'propose' ? t('story2bpmn', 'Make a proposal') : actionText(a, l.move) }}
+						</button>
+					</div>
 				</div>
 				<!-- "+ Insert before": the same choice as "What happens next?", only what fits here (job 408). -->
 				<div v-if="!phone && choosing !== null && choosing === l.move" class="before-choice move-form" :style="{ '--t': l.depth }">
@@ -347,6 +346,41 @@
 						</button>
 					</div>
 				</form>
+				<!-- "Move …" (job 457): where to, and up to which line; desktop and phone under the line. -->
+				<form v-if="moving && l.move !== undefined && moving.index === l.move"
+					class="proposal-form move-to-form"
+					:style="{ '--t': l.depth }"
+					@keydown.esc.stop.prevent="cancelMove"
+					@submit.prevent="doMove">
+					<p class="label">
+						{{ t('story2bpmn', 'Move line {line}', { line: moving.index + 1 }) }}
+					</p>
+					<label :for="'story2bpmn-mw-' + i">{{ t('story2bpmn', 'Where to?') }}</label>
+					<select :id="'story2bpmn-mw-' + i" v-model="moving.pos" data-where :disabled="!moveChoice.places.length">
+						<option v-for="p in moveChoice.places" :key="p.pos" :value="p.pos">
+							{{ placeText(p) }}
+						</option>
+					</select>
+					<p v-if="!moveChoice.places.length" class="form-error">
+						{{ t('story2bpmn', 'No place to move this to') }}
+					</p>
+					<template v-if="moveChoice.ends.length > 1">
+						<label :for="'story2bpmn-me-' + i">{{ t('story2bpmn', 'Up to line') }}</label>
+						<select :id="'story2bpmn-me-' + i" v-model="moving.end" data-until @change="endChanged">
+							<option v-for="x in moveChoice.ends" :key="x.e" :value="x.e">
+								{{ x.e === moving.index ? t('story2bpmn', 'Only this line') : t('story2bpmn', 'Line {line}: {text}', { line: x.e + 1, text: x.text }) }}
+							</option>
+						</select>
+					</template>
+					<div class="row">
+						<button type="submit" class="button main" :disabled="busy || moving.pos === null">
+							{{ t('story2bpmn', 'Move') }}
+						</button>
+						<button type="button" class="button quiet" @click="cancelMove">
+							{{ t('story2bpmn', 'Cancel') }}
+						</button>
+					</div>
+				</form>
 				<MoveForm v-if="!phone && form && form.place !== 'added' && form.index === l.move && l.move !== undefined"
 					:key="formKey"
 					v-bind="formProps"
@@ -354,7 +388,7 @@
 					@cancel="cancel" />
 			</li>
 			</template>
-			<NextLine v-if="nextAt === view.lines.length" :next="panel.next" />
+			<NextLine v-if="nextAt === view.lines.length" :next="panel.next" :tree="tree.next" />
 		</ol>
 
 		<!-- Phone: the next move (and a changed or inserted line) is told in a sheet from below. -->
@@ -366,7 +400,12 @@
 			:aria-label="asSheet ? sheetTitle : undefined">
 			<div v-if="asSheet" class="sheet-head">
 				<span class="grip" aria-hidden="true" />
-				<h3>{{ sheetTitle }}</h3>
+				<div class="sheet-titles">
+					<p class="so-rubric sheet-rubric">
+						{{ sheetRubric }}
+					</p>
+					<h3>{{ sheetTitle }}</h3>
+				</div>
 				<button v-if="sheetClosable"
 					type="button"
 					class="button quiet icon sheet-close"
@@ -576,7 +615,7 @@
 								class="path-button"
 								:disabled="busy"
 								@click="set(switchTo(moves, i))">
-								<span class="path-pill">{{ w }}</span>
+								<span class="path-pill so-chip so-chip--warn">{{ w }}</span>
 								<span class="before">{{ t('story2bpmn', 'Tell now') }}<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
 							</button>
 						</li>
@@ -589,6 +628,18 @@
 			</template>
 		</div>
 
+		<BottomSheet v-if="phone && sheetPath"
+			:title="t('story2bpmn', 'Path {name}', { name: sheetPath.name })"
+			@close="closeMenu">
+			<button v-for="a in pathActions(moves, sheetPath.path)"
+				:key="a"
+				type="button"
+				class="sheet-item"
+				:disabled="busy"
+				@click="swap(a, sheetPath.path)">
+				{{ pathText(a) }}
+			</button>
+		</BottomSheet>
 		<BottomSheet v-if="phone && menu !== null && moves[menu]"
 			:title="t('story2bpmn', 'Line {number}', { number: menu + 1 })"
 			@close="closeMenu">
@@ -611,24 +662,30 @@ import { nextTick } from 'vue'
 import BottomSheet from './BottomSheet.vue'
 import MoveForm from './MoveForm.vue'
 import NextLine from './NextLine.vue'
+import PathName from './PathName.vue'
+import StoryParts from './StoryParts.vue'
+import DiffList from './DiffList.vue'
+import StoryRails from './StoryRails.vue'
 import TextEditor from './TextEditor.vue'
 import {
-	append, beforeAt, hasFields, removeStep, exceptionOf, keepPath, keptPath, dropPath, droppedPath, reopen, ranks, switchTo,
+	append, beforeAt, hasFields, removeStep, exceptionOf, keepPath, keptPath, dropPath, droppedPath, reopen, swapPath, joinAll, joinableLines, movableLines, moveChoices, moveSteps, ranks, switchTo,
 	changeLine, hereState, tellHere, openPaths, applyTarget, endsTelling,
-	lineActions, lineParts, digitKey, keyEnv, storyKeys, textFrom, withProcess, withSubprocess, beforeOptions, insertAt, exceptionAt, triggerAdded,
-	untoldFlows, FREQUENT,
+	lineActions, lineParts, digitKey, keyEnv, storyKeys, textFrom, storyNumbers, withProcess, withSubprocess, beforeOptions, insertAt, exceptionAt, triggerAdded,
+	untoldFlows, FREQUENT, atLevel, roleUses, renameRole,
 } from '../workbench.ts'
 import { END_KINDS, START_KINDS } from '../core/story.ts'
-import { compareLines, validLines, validStory, validLineOf, validIndexOf, currentIndexOf, proposalAt, proposalText, currentLines as linesOf } from '../approval.ts'
+import { compareLines, diffRows, validLines, validStory, validLineOf, validIndexOf, currentIndexOf, proposalAt, proposalText, currentLines as linesOf } from '../approval.ts'
 import { sheetActions } from '../phoneView.ts'
 import { createArm } from '../armed.ts'
-import { formFor, triggerIndex } from '../lineMenu.ts'
-import { dropText, helpText, keepText, objectText, optionText } from '../texts.js'
+import { asTextTarget, formFor, menuGroups, pathActions, pathKey, triggerIndex } from '../lineMenu.ts'
+import { dropText, helpText, keepText, objectText, optionText, removeText } from '../texts.js'
+import { figures } from '../headChips.ts'
+import { storyTree } from '../storyTree.ts'
 
 
 export default {
 	name: 'GeschichteKarte',
-	components: { BottomSheet, MoveForm, NextLine, TextEditor },
+	components: { BottomSheet, DiffList, MoveForm, NextLine, PathName, StoryParts, StoryRails, TextEditor },
 	props: {
 		view: { type: Object, required: true },
 		moves: { type: Array, required: true },
@@ -636,6 +693,8 @@ export default {
 		busy: { type: Boolean, default: false },
 		/** (added: Move[]) => Promise<Result> */
 		change: { type: Function, required: true },
+		/** (all: Move[]) => Promise<Result>: new moves of the whole story, also on a subprocess level (job 454). */
+		changeAll: { type: Function, default: null },
 		/** () => Promise<Result>: back to the state before the last change. */
 		back: { type: Function, required: true },
 		/** An earlier state exists: undo is possible only then (job 409). */
@@ -662,7 +721,7 @@ export default {
 		/** Unsaved state found in the browser ({ time }, App.vue draftNote, job 399) or null. */
 		draftNote: { type: Object, default: null },
 	},
-	emits: ['example', 'choose', 'compare', 'withdraw', 'open', 'back', 'moved', 'show', 'sheet', 'text-mode', 'restore-draft', 'discard-draft', 'text-draft'],
+	emits: ['example', 'choose', 'compare', 'withdraw', 'open', 'back', 'moved', 'show', 'sheet', 'text-mode', 'restore-draft', 'discard-draft', 'text-draft', 'as-text'],
 	data() {
 		return {
 			// Form: { subtype, place: 'added' | 'replace' | 'before', index?, start, title, targets? }
@@ -676,12 +735,17 @@ export default {
 			// Edit as text: editor open, content when opening
 			textMode: false,
 			textStart: '',
+			textNumbers: null,
 			// A restored typed text (job 406), or null
 			textInitial: null,
+			// The text line the caret starts on ("Edit as text" of a line, job 453), or null
+			textCursor: null,
 			textPrevious: [],
 			compareAll: false,
 			// Open proposal form: { index, line, label, kind, text, why, error, sending }
 			proposal: null,
+			// Open form "Move …" (job 457): { index, end, pos } (move indexes of this level; pos: before which old move), or null.
+			moving: null,
 			// Phone: the move sheet was opened with "+".
 			sheetOpen: false,
 			// Move index of the path still open being told ("Tell here"), or null: the story goes on at its end.
@@ -696,11 +760,24 @@ export default {
 		options: optionText,
 		helps: helpText,
 		objects: objectText,
+		/** The paths of the lines shown as a tree (job 448); the heading and marker of NextLine take part. */
+		tree() {
+			const lines = this.view.lines
+			const at = this.nextAt
+			const next = at >= 0 && this.panel.next ? this.panel.next : null
+			const extra = next ? [...(next.head ? [{ depth: Math.max(next.depth - 1, 0), text: next.head }] : []), { depth: next.depth, text: '', here: true }] : []
+			const from = next ? at : lines.length
+			const all = storyTree([...lines.slice(0, from), ...extra, ...lines.slice(from)], this.chosenLine, (m) => this.moves[m]?.move === 'anytime')
+			return {
+				lines: [...all.slice(0, from), ...all.slice(from + extra.length)],
+				next: next ? { head: next.head ? all[from] : null, here: all[from + extra.length - 1] } : null,
+			}
+		},
 		/** Colour key: "Signal" only when the story has one. */
 		keyObjects() {
 			const { signal, item, ...rest } = this.objects
 			// Signal and item only when the story has one.
-			const items = (this.view.storyText ?? []).some((l) => /, (FÜR JEDE|FOR EACH) \[/.test(l.text))
+			const items = (this.view.storyText ?? []).some((l) => /, (JE|FÜR JEDE|FOR EACH) \[/.test(l.text))
 			return { ...rest, ...(this.view.signals?.length && { signal }), ...(items && { item }) }
 		},
 		hint() {
@@ -755,6 +832,9 @@ export default {
 				growable: f.place !== 'replace' || f.index === this.moves.length - 1 || ['decision', 'concurrent'].includes(f.subtype),
 				minPaths: f.place === 'replace' && f.index !== this.moves.length - 1 ? f.paths ?? 0 : 0,
 				focus: f.focus ?? '',
+				switchable: !!f.switchable,
+				// A changed line asks "only here or everywhere?" when its role changes (job 454).
+				roleUses: f.place === 'replace' && this.changeAll ? roleUses(this.view.moves ?? this.moves) : null,
 				busy: this.busy,
 			}
 		},
@@ -765,6 +845,20 @@ export default {
 		tellOpts() {
 			if (!this.view.sub) return {}
 			return { inner: { name: this.view.sub.name, ...(this.view.sub.trigger && { trigger: this.view.sub.trigger }) } }
+		},
+		/** The moves of this level whose line offers "From here on for all paths" (job 456), one replay for all. */
+		joinable() {
+			return joinableLines(this.moves, this.language, this.tellOpts)
+		},
+		/** The moves of this level whose line offers "Move …" (job 457), one replay for all. */
+		movable() {
+			return movableLines(this.moves, this.language, this.tellOpts)
+		},
+		/** Choices of the open form "Move …": up to which line, and where to. */
+		moveChoice() {
+			const m = this.moving
+			if (!m || !this.moves[m.index]) return { ends: [], places: [] }
+			return moveChoices(this.moves, m.index, m.end, this.language, this.tellOpts)
 		},
 		/** Index in view.lines where the marker "continue here" goes: before what can come at any time. -1: no marker. */
 		nextAt() {
@@ -790,9 +884,6 @@ export default {
 		},
 		changes() {
 			return this.diff.filter((d) => d.kind !== 'same')
-		},
-		shownDiff() {
-			return this.compareAll ? this.diff : this.changes
 		},
 		/** Line index → 'change' | 'remark' …: where an open proposal points to (the line accepting changes, job 417). */
 		proposalTags() {
@@ -820,16 +911,27 @@ export default {
 			if (this.form) return this.form.title
 			return this.choosing !== null ? t('story2bpmn', 'What comes before?') : t('story2bpmn', 'Next move')
 		},
+		/** Above the title of the sheet (view C3, job 450): a new move, or the line it changes. */
+		sheetRubric() {
+			if (this.form && this.form.place !== 'added' && this.form.index !== undefined && this.moves[this.form.index]) return t('story2bpmn', 'Line {line}', { line: this.form.index + 1 })
+			return t('story2bpmn', 'Next move')
+		},
 		/** Right at the beginning the trigger has to be told: no closing then. */
 		sheetClosable() {
 			return this.moves.length > 0 || !!this.view.sub
+		},
+		/** Phone: the path heading whose ⋯ sheet is open (job 455): its path and its name. */
+		sheetPath() {
+			if (typeof this.menu !== 'string') return null
+			const at = this.view.lines.findIndex((l) => l.path && pathKey(l.path) === this.menu)
+			return at < 0 ? null : { path: this.view.lines[at].path, name: this.pathName(this.tree.lines[at].label) }
 		},
 		/** Phone: the actions of the ⋯ sheet of the line in `menu`. */
 		menuActions() {
 			const i = this.menu
 			if (i === null || !this.moves[i]) return []
 			const at = this.view.lines.findIndex((l) => l.move === i)
-			return sheetActions(this.moves[i], i, !!this.view.sub, !!this.canPropose && at >= 0 && this.validLine(this.view.lineOffset + at) !== null, this.hasException(i))
+			return sheetActions(this.moves[i], i, !!this.view.sub, !!this.canPropose && at >= 0 && this.validLine(this.view.lineOffset + at) !== null, this.hasException(i), this.joinable.has(i), this.movable.has(i))
 		},
 		/** What "+ Insert before" offers at the line in `choosing` (job 408). */
 		beforeChoices() {
@@ -864,6 +966,10 @@ export default {
 		phone(v) {
 			if (!v) this.sheetOpen = false
 		},
+		// Another change (undo, another level) ends "Move …": its lines are other ones then.
+		moves() {
+			this.moving = null
+		},
 	},
 	created() {
 		// The armed delete button ("Really delete?"); `deleteArmed` mirrors it for the template.
@@ -880,21 +986,72 @@ export default {
 		if (this.textMode) this.$emit('text-draft', null)
 	},
 	methods: {
+		figures,
 		t,
 		n,
 		lineParts,
 		lineActions,
 		switchTo,
+		pathActions,
+		pathKey,
+		/** The name of a path as plain text (its heading shows it with PathName). */
+		pathName(label) {
+			if (!label) return ''
+			if (label.kind === 'answer') return label.answer
+			if (label.kind === 'strand') return t('story2bpmn', 'Branch {number}', { number: label.number })
+			return label.text.replace(/[[\]@#+!?]/g, '')
+		},
+		pathText(a) {
+			return a === 'pathUp' ? t('story2bpmn', 'Move path up') : t('story2bpmn', 'Move path down')
+		},
+		/** Swaps the path with the one above or below (job 455); refused: the reason above the story. */
+		async swap(a, path) {
+			const up = a === 'pathUp'
+			const r = swapPath(this.moves, path.at, up ? path.n - 1 : path.n, this.language, this.tellOpts)
+			const done = await this.applyOrRefuse(r)
+			// Focus stays with the path that moved: its heading's ⋯ under its new number.
+			if (!r.error && done?.ok) nextTick(() => this.focusMenu(pathKey({ at: path.at, n: up ? path.n - 1 : path.n + 1 })))
+			return done
+		},
+		/** "Move …" at line i: the form under the line, the first place chosen, the focus on "Where to?" (job 457). */
+		openMove(i) {
+			this.mode = null
+			this.proposal = null
+			this.moving = { index: i, end: i, pos: null }
+			this.moving.pos = this.moveChoice.places[0]?.pos ?? null
+			nextTick(() => this.$el.querySelector('.move-to-form select')?.focus())
+		},
+		/** Other lines along: the places are new; the chosen one stays when it is still among them. */
+		endChanged() {
+			const places = this.moveChoice.places
+			if (!places.some((p) => p.pos === this.moving.pos)) this.moving.pos = places[0]?.pos ?? null
+		},
+		cancelMove() {
+			const i = this.moving?.index
+			this.moving = null
+			if (i !== undefined) nextTick(() => this.focusMenu(i, { more: this.phone }))
+		},
+		placeText(p) {
+			if (p.after !== undefined) return t('story2bpmn', 'After line {line}: {text}', { line: p.after + 1, text: p.text })
+			if (p.path !== undefined) return t('story2bpmn', 'At the start of path “{name}” after line {line}: {text}', { name: p.path, line: p.at + 1, text: p.text })
+			return t('story2bpmn', 'At the start')
+		},
+		/** One change: refused, the reason shows at the top and the form stays; done, the focus goes to the line's ⋯. */
+		async doMove() {
+			const m = this.moving
+			if (!m || m.pos === null || this.busy) return
+			const r = moveSteps(this.moves, m.index, m.end, m.pos, this.language, this.tellOpts)
+			const done = await this.applyOrRefuse(r)
+			if (!r.error && done?.ok) {
+				this.moving = null
+				nextTick(() => this.focusMenu(r.at, { more: this.phone }))
+			}
+			return done
+		},
 		frequentKind: (a) => FREQUENT.includes(a),
 		day(iso) {
 			const d = new Date(iso)
 			return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { dateStyle: 'medium' })
-		},
-		diffWord(kind) {
-			if (kind === 'new') return t('story2bpmn', 'New')
-			if (kind === 'changed') return t('story2bpmn', 'Changed')
-			if (kind === 'removed') return t('story2bpmn', 'Removed')
-			return ''
 		},
 		/** Index of story line i in the valid version when a proposal can point to it (a line of a move), or null. */
 		validLine(i) {
@@ -945,7 +1102,12 @@ export default {
 		},
 		/** The actions of the line menu of move i. */
 		actionsOf(i) {
-			return lineActions(this.moves[i], i, !!this.view.sub, this.hasException(i))
+			return lineActions(this.moves[i], i, !!this.view.sub, this.hasException(i), this.joinable.has(i), this.movable.has(i))
+		},
+		/** The line menu of move i at line index i of the level, in its groups (job 448). */
+		groupsOf(move, i) {
+			const propose = this.canPropose && this.validLine(this.view.lineOffset + i) !== null
+			return menuGroups([...this.actionsOf(move), ...(propose ? ['propose'] : []), 'asText'])
 		},
 		/** A kind chosen in "What comes before?": its form at the same line. */
 		chooseBefore(subtype) {
@@ -963,6 +1125,7 @@ export default {
 		actionText(a, i) {
 			if (a === 'subprocess' && this.moves[i]?.move === 'anytime') return t('story2bpmn', 'Open its flow')
 			if (a === 'subprocess') return Array.isArray(this.moves[i]?.subprocess) ? t('story2bpmn', 'Open the flow behind it') : t('story2bpmn', 'Add a flow behind it')
+			if (a === 'asText') return t('story2bpmn', 'Edit as text')
 			if (a === 'edit') return t('story2bpmn', 'Edit')
 			if (a === 'before') return t('story2bpmn', '+ Insert before')
 			if (a === 'addException') return t('story2bpmn', 'Add an exception')
@@ -970,13 +1133,15 @@ export default {
 			if (a === 'addPath') return t('story2bpmn', 'Add another path')
 			if (a === 'tell') return t('story2bpmn', 'Tell here')
 			if (a === 'reopen') return t('story2bpmn', 'Reopen path')
+			if (a === 'joinAll') return t('story2bpmn', 'From here on for all paths')
+			if (a === 'move') return t('story2bpmn', 'Move …')
 			const drop = droppedPath(a)
 			if (drop !== null) return dropText(this.moves[i], drop, this.language)
 			const keep = keptPath(a)
 			if (keep === null) {
 				if (this.deleteArmed !== a) return t('story2bpmn', 'Delete')
-				// A step with an exception: the second click deletes the exception too.
-				return exceptionOf(this.moves, i, this.language, this.tellOpts) >= 0 ? t('story2bpmn', 'Delete the exception too?') : t('story2bpmn', 'Really delete?')
+				// A step with an exception: the second click deletes the exception too; with a flow, it says how many moves go (job 452).
+				return removeText(this.moves[i], exceptionOf(this.moves, i, this.language, this.tellOpts) >= 0)
 			}
 			if (this.deleteArmed === a) {
 				// How many moves go, so that deleting a long path is no surprise.
@@ -1116,6 +1281,8 @@ export default {
 			// Any other line action ends "Tell here": its form or change belongs to its own line.
 			if (endsTelling(a)) this.openAt = null
 			this.choosing = null
+			if (a !== 'move') this.moving = null
+			if (a === 'asText') return this.asTextAt(i)
 			if (a === 'subprocess') {
 				this.menu = null
 				if (this.moves[i]?.move === 'task' && !Array.isArray(this.moves[i]?.subprocess)) {
@@ -1141,7 +1308,15 @@ export default {
 			if (drop !== null) return this.applyOrRefuse(dropPath(this.moves, i, drop, this.language, this.tellOpts))
 			// The path is open again: no confirmation, nothing goes, undo closes it again (job 400).
 			if (a === 'reopen') return this.applyOrRefuse(reopen(this.moves, i, this.language, this.tellOpts))
+			// The path merges before the line, the line and the rest come after the merge (job 456); focus follows the line.
+			if (a === 'joinAll') {
+				const r = joinAll(this.moves, i, this.language, this.tellOpts)
+				const done = await this.applyOrRefuse(r)
+				if (!r.error && done?.ok) nextTick(() => this.focusMenu(r.at, { more: this.phone }))
+				return done
+			}
 			this.menu = null
+			if (a === 'move') return this.openMove(i)
 			if (a === 'tell') return this.tellAt(i)
 			this.counter++
 			if (a === 'addPath') {
@@ -1160,10 +1335,17 @@ export default {
 				nextTick(() => this.$el.querySelector('.before-choice .option')?.focus())
 			}
 		},
-		async apply(move) {
+		async apply(move, everywhere = null) {
 			const m = this.form
 			const target = applyTarget(m.place, this.panel !== this.view)
 			if (target === 'tellOpen') return this.tellOpen(move)
+			// The role renamed in the whole story, the line changed with it: one change, one undo (job 454).
+			if (target === 'replace' && everywhere && this.changeAll) {
+				const r = changeLine(this.moves, m.index, move, this.language, this.tellOpts)
+				if (r.error) return this.refused(r.error)
+				const all = renameRole(atLevel(this.view.moves ?? this.moves, this.view.level, r.moves, this.view.any), everywhere.from, everywhere.to)
+				return this.set(all, m.index, () => this.changeAll(all))
+			}
 			// A change at a line of the story: the core's result and the index of the line told.
 			let r = null
 			let told = null
@@ -1245,16 +1427,31 @@ export default {
 			if (this.textMode) return this.$refs.editor ? this.$refs.editor.requestCancel(this.$refs.asText) : this.textTo()
 			this.openText(null)
 		},
-		/** Opens the editor; `text`: a restored typed text shown instead of the story text (job 406). */
-		openText(text) {
+		/**
+		 * Opens the editor; `text`: a restored typed text shown instead of the story text (job 406);
+		 * `line`: the text line the caret starts on (job 453).
+		 */
+		openText(text, line = null) {
 			this.mode = null
 			this.choosing = null
 			this.menu = null
 			this.armer.disarm()
 			this.textStart = textFrom(this.view.storyText ?? [])
+			this.textNumbers = storyNumbers(this.view.storyText ?? [])
 			this.textPrevious = this.moves
 			this.textInitial = text ?? null
+			this.textCursor = line
 			this.textMode = true
+		},
+		/** "Edit as text" of the line of move i: the editor opens with the caret on that line; on a subprocess level the app goes to the main level first (job 453). */
+		asTextAt(i) {
+			this.menu = null
+			this.armer.disarm()
+			const at = this.view.lines.findIndex((l) => l.move === i)
+			if (at < 0) return
+			const { line, here } = asTextTarget(this.view, at)
+			if (here) return this.openText(null, line)
+			this.$emit('as-text', line)
 		},
 		textTo() {
 			this.textMode = false

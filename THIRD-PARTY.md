@@ -74,6 +74,13 @@ as `*.license`):
 | vue-router | 5.5.0 | MIT |
 | webdav | 5.11.0 | MIT |
 
+The figures of the interface are set in IBM Plex Mono (regular and medium, latin), from the
+design system Soothing: the font files ship in `js/fonts/` with their licence.
+
+| Font | Licence |
+|---|---|
+| IBM Plex Mono | OFL-1.1 |
+
 The PDF reading copy uses the PDF standard fonts Helvetica and Helvetica Bold
 through pdf-lib (`@pdf-lib/standard-fonts`, MIT): only their metrics ship, no
 font files.

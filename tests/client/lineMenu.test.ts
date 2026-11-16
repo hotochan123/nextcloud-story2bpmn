@@ -33,7 +33,7 @@ test('427 addPath: concurrent counts its branches, one more in the form', () => 
 
 test('427 edit: task, decision, concurrent and exception path with their path counts', () => {
 	assert.deepEqual(formFor('edit', MOVES, 1, 'en'), { subtype: 'task', place: 'replace', index: 1, start: T('Check'), paths: 0, targets: undefined });
-	assert.deepEqual(formFor('edit', MOVES, 2, 'en'), { subtype: 'decision', place: 'replace', index: 2, start: DEPENDS, paths: 3, targets: undefined });
+	assert.deepEqual(formFor('edit', MOVES, 2, 'en'), { subtype: 'decision', place: 'replace', index: 2, start: DEPENDS, paths: 3, targets: undefined, switchable: true });
 	assert.equal(formFor('edit', [START, AT_ONCE], 1, 'en')!.paths, 3);
 	// Not the core's path count: an exception path counts 0 here.
 	assert.deepEqual(formFor('edit', [START, T('Check'), EXC], 2, 'en'), { subtype: 'exceptionPath', place: 'replace', index: 2, start: EXC, paths: 0, targets: undefined });

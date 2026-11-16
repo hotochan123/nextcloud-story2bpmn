@@ -6,7 +6,7 @@
 
 /** filled: for a signal, whether it is given (send, end) or awaited (trigger, wait, path). */
 /** sub: the task of a subprocess (its label shows a plus). */
-export type Part = { subtype: 'text' | 'sw' | 'o'; text: string; object?: string; filled?: boolean; sub?: boolean };
+export type Part = { subtype: 'text' | 'sw' | 'o' | 'filler'; text: string; object?: string; filled?: boolean; sub?: boolean };
 
 /** Is this story line a signal: awaited ('empty') or given ('filled')? Known from its signal word. */
 export function signalLine(text: string): 'empty' | 'filled' | undefined {
@@ -21,10 +21,10 @@ function markSignal(parts: Part[], text: string): Part[] {
 	const kind = signalLine(text);
 	const first = kind ? parts.find((p) => p.subtype === 'o') : undefined;
 	if (first) Object.assign(first, { object: 'signal', filled: kind === 'filled' });
-	// What a step runs for: the object right after "FÜR JEDE" / "FOR EACH" is no step.
+	// What a step runs for: the object right after "JE" / "FOR EACH" is no step ("FÜR JEDE": the old German word).
 	parts.forEach((p, i) => {
 		const before = parts[i - 1];
-		if (p.subtype === 'o' && before?.subtype === 'text' && /, (FÜR JEDE|FOR EACH) $/.test(before.text)) p.object = 'item';
+		if (p.subtype === 'o' && before?.subtype === 'text' && /, (JE|FÜR JEDE|FOR EACH) $/.test(before.text)) p.object = 'item';
 	});
 	// A task with a flow behind it: its label carries the plus (not colour alone).
 	if (/, (MIT TEILABLAUF|WITH SUBPROCESS)\.?$/.test(text.trim())) {
@@ -60,7 +60,26 @@ export function lineParts(text: string): Part[] {
 		rest = rest.slice(sw[1].length);
 	}
 	brackets(parts, rest, (m) => m[2] + (m[1] === '?' ? '?' : ''));
-	return markSignal(parts, text);
+	return fillers(markSignal(parts, text));
+}
+
+/** Filler words between the parts of a line, shown muted (job 448): whole words only. */
+const FILLER = /(?<![\p{L}\p{N}])(soll|in|mit|bei|shall|with|at)(?![\p{L}\p{N}])/gu;
+
+/** Splits the filler words out of the text parts. */
+function fillers(parts: Part[]): Part[] {
+	return parts.flatMap((p) => {
+		if (p.subtype !== 'text') return [p];
+		const out: Part[] = [];
+		let pos = 0;
+		for (const m of p.text.matchAll(FILLER)) {
+			if (m.index! > pos) out.push({ subtype: 'text', text: p.text.slice(pos, m.index) });
+			out.push({ subtype: 'filler', text: m[0] });
+			pos = m.index! + m[0].length;
+		}
+		if (pos < p.text.length) out.push({ subtype: 'text', text: p.text.slice(pos) });
+		return out;
+	});
 }
 
 /**

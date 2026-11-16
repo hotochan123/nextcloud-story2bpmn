@@ -304,12 +304,12 @@ const cases = {
 			await ctx.close();
 		}
 	},
-	// Follow in the bar and in the diagram stay one state when the diagram card is rebuilt (language, level)
+	// Follow (in the diagram head since job 450) starts on again when the diagram card is rebuilt (language, level)
 	async follow() {
 		const { ctx, page } = await open(PHONE);
 		try {
 			await page.locator('.phone-bar .seg').nth(1).tap();
-			const follow = page.locator('.phone-bar .follow');
+			const follow = page.locator('.diagram-card .card-head .follow');
 			check(await follow.getAttribute('aria-pressed') === 'true', 'Follow not on at the start');
 			await follow.tap();
 			check(await follow.getAttribute('aria-pressed') === 'false', 'Follow did not switch off');
@@ -317,10 +317,272 @@ const cases = {
 			const lang = page.locator('.head-sheet select.language');
 			await lang.selectOption((await lang.inputValue()) === 'de' ? 'en' : 'de');
 			await page.waitForTimeout(1500);
-			// the rebuilt card starts with Follow on: the bar says so, and one tap switches it off again
-			check(await follow.getAttribute('aria-pressed') === 'true', 'bar shows Follow off, the rebuilt diagram follows');
+			// the rebuilt card starts with Follow on, and one tap switches it off again
+			check(await follow.getAttribute('aria-pressed') === 'true', 'Follow off, the rebuilt diagram follows');
 			await follow.tap();
 			check(await follow.getAttribute('aria-pressed') === 'false', 'one tap did not switch Follow off');
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 447: Soothing head, the explanation only on the empty start, one primary button, the paper stays white in dark
+	async soothing() {
+		const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: 'en-US', storageState: state });
+		const page = await ctx.newPage();
+		try {
+			await page.goto(`${url}/apps/story2bpmn/`);
+			const see = page.getByRole('button', { name: 'See an example' });
+			await see.waitFor({ state: 'visible', timeout: 30000 });
+			const head = page.locator('.story2bpmn-workshop .head');
+			check(!/Tell a process/.test(await head.textContent()), 'the head still says "Tell a process"');
+			check(await shown(page, '.diagram-card .empty-sheet .about'), 'no explanation on the empty start');
+			check(/For documentation, not for execution\./.test(await page.locator('.empty-sheet .about').textContent()), 'explanation text');
+			await see.click();
+			await page.waitForSelector('.story2bpmn-workshop .diagram-card svg', { state: 'attached', timeout: 30000 });
+			await page.waitForTimeout(800);
+			const title = (await head.locator('h1.name').textContent()).trim();
+			check(title && title !== 'New process', `title of the head: "${title}"`);
+			check(/Not saved yet/.test(await head.locator('.file').textContent()), 'the rubric does not say "Not saved yet"');
+			check((await head.locator('.so-chip--open').textContent()).trim() === 'Fully told', 'no chip "● Fully told"');
+			check(await page.locator('.empty-sheet .about').count() === 0 && !/For documentation, not for execution/.test(await page.locator('.story2bpmn-workshop').textContent()), 'explanation left over a told story');
+			const mains = await page.locator('.story2bpmn-workshop .button.main').evaluateAll((els) => els.filter((e) => e.getClientRects().length > 0).length);
+			check(mains <= 1, `${mains} primary buttons`);
+			await page.locator('.workbench .line.choosable').nth(1).locator('.num').click();
+			await page.waitForTimeout(800);
+			const frame = await page.locator('.diagram-card .chosen-frame').first().evaluate((r) => {
+				const s = getComputedStyle(r);
+				const probe = document.createElement('span');
+				probe.style.color = 'var(--color-primary-element)';
+				document.querySelector('.story2bpmn-workshop').append(probe);
+				const accent = getComputedStyle(probe).color;
+				probe.remove();
+				return { dash: s.strokeDasharray, stroke: s.stroke, accent };
+			});
+			check(frame.dash === 'none' && frame.stroke !== frame.accent, `chosen frame ${JSON.stringify(frame)}`);
+			await page.screenshot({ path: `${out}/soothing-light.png` });
+		} finally {
+			await ctx.close();
+		}
+		const { ctx: dark, page: darkPage } = await open({ width: 1440, height: 900, scheme: 'dark' });
+		try {
+			const look = await darkPage.evaluate(() => {
+				const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).map(Number); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; };
+				return {
+					mat: lum(getComputedStyle(document.querySelector('.diagram-card .mat')).backgroundColor),
+					paper: getComputedStyle(document.querySelector('.diagram-card .sheet svg')).backgroundColor,
+				};
+			});
+			check(look.mat < 0.5, `area around the paper not dark (${look.mat})`);
+			check(look.paper === 'rgb(255, 255, 255)', `paper ${look.paper}`);
+			await darkPage.screenshot({ path: `${out}/soothing-dark.png` });
+		} finally {
+			await dark.close();
+		}
+	},
+	// Job 449 (Soothing 3): "Edit as text" numbers its lines like the story; an error names that number (AK5–AK7)
+	async 'text-numbers'() {
+		const { ctx, page } = await open({ width: 1440, height: 900 });
+		try {
+			const story = page.locator('.workbench > .card:not(.diagram-card)');
+			const numbers = await page.locator('.course > .line[data-line] .num-button').allInnerTexts();
+			check(numbers.length > 3, `story numbers: ${numbers.length}`);
+			await story.getByRole('button', { name: 'Edit as text' }).click();
+			const editor = page.locator('.text-editor');
+			const field = editor.locator('textarea');
+			await field.waitFor({ state: 'visible' });
+			await editor.locator('.t-status.ok').getByText(/recognised/).waitFor({ timeout: 30000 });
+			const gutter = () => editor.locator('.gutter span').allInnerTexts();
+			const text = (await field.inputValue()).split('\n');
+			const g = await gutter();
+			check(g.length === text.length, `gutter ${g.length} rows for ${text.length} lines`);
+			check(JSON.stringify(g.filter((x) => x.trim())) === JSON.stringify(numbers), `gutter ${g.join(',')} vs story ${numbers.join(',')}`);
+			const heads = text.map((l, i) => [l, i]).filter(([l]) => /^\s*((ELSE|SONST) )?→ /.test(l));
+			check(heads.length >= 2, 'no path headings in the example');
+			for (const [l, i] of heads) check(!g[i].trim(), `heading "${l.trim()}" has number ${g[i]}`);
+			// AK6: field and layer in the same face, the instance font; each line as wide as in the field
+			const fonts = await editor.locator('.fieldWrap').evaluate((w) => {
+				const ta = w.querySelector('textarea');
+				const keys = ['fontFamily', 'fontSize', 'fontWeight', 'letterSpacing', 'lineHeight'];
+				const of = (el) => keys.map((k) => getComputedStyle(el)[k]).join('|');
+				const want = of(ta);
+				const odd = [...w.querySelectorAll('.color, .color *')].filter((el) => of(el) !== want).map((el) => `${el.className}: ${of(el)}`);
+				const c = document.createElement('canvas').getContext('2d');
+				const s = getComputedStyle(ta);
+				c.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+				const widths = [...w.querySelectorAll('.color .tz')].map((tz, i) => {
+					const line = ta.value.split('\n')[i] ?? '';
+					if (!line.trim()) return 0;
+					const r = document.createRange();
+					r.selectNodeContents(tz);
+					return Math.abs(r.getBoundingClientRect().width - c.measureText(line).width);
+				});
+				return { want, odd, worst: Math.max(0, ...widths) };
+			});
+			check(!fonts.odd.length, `layer differs from the field: ${fonts.odd[0]}`);
+			check(!/mono/i.test(fonts.want), `field in mono: ${fonts.want}`);
+			check(fonts.worst <= 1, `a line of the layer is ${fonts.worst.toFixed(2)} px off the field`);
+			// AK5: a typo in a move names the number the story shows on that line
+			const at = text.findIndex((l) => /^\s*END: /.test(l));
+			check(at > 0 && g[at].trim(), `no numbered END line: ${at}`);
+			const typo = [...text];
+			typo[at] = typo[at].replace('END:', 'ENDD:');
+			await field.fill(typo.join('\n'));
+			const notice = editor.locator('.so-notice--danger');
+			await notice.waitFor({ timeout: 30000 });
+			const said = (await notice.innerText()).replace(/\s+/g, ' ');
+			check(said.includes(`Not taken over: Line ${g[at].trim()}`), `notice: ${said}`);
+			check(await editor.locator('.so-chip--danger', { hasText: 'Not taken over' }).count() === 1, 'no chip "Not taken over"');
+			const marked = await editor.locator('.color .tz').evaluateAll((els) => els.map((e, i) => (e.classList.contains('missing') ? i : -1)).filter((i) => i >= 0));
+			check(JSON.stringify(marked) === JSON.stringify([at]), `marked lines ${marked} instead of ${at}`);
+			check((await gutter())[at].trim() === g[at].trim(), 'the number of the line changed with the typo');
+			await page.screenshot({ path: `${out}/text-numbers-desktop.png` });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/text-numbers-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+		// AK7: the phone's full screen editor has the number column and the notice; the page does not overflow
+		const { ctx: c, page: p } = await open(PHONE);
+		try {
+			await p.getByRole('button', { name: 'More actions' }).tap();
+			await p.locator('.head-sheet').getByRole('button', { name: 'Edit as text', exact: true }).tap();
+			const ed = p.locator('.text-editor.full');
+			await ed.waitFor({ state: 'visible' });
+			const field = ed.locator('textarea');
+			const g = await ed.locator('.gutter span').allInnerTexts();
+			check(g.some((x) => x.trim() === '1'), 'no number column on the phone');
+			const col = await ed.locator('.gutter').boundingBox();
+			check(col && col.width >= 28, `number column ${col?.width} px`);
+			await field.fill((await field.inputValue()) + '\nQuatsch hier');
+			await ed.locator('.so-notice--danger').waitFor({ timeout: 30000 });
+			check(await ed.locator('.so-notice--danger').isVisible(), 'notice hidden on the phone');
+			const over = await p.evaluate(() => document.scrollingElement.scrollWidth - window.innerWidth);
+			check(over <= 0, `page ${over} px wider than the screen`);
+			for (const b of await ed.locator('.editor-head button').all()) {
+				const box = await b.boundingBox();
+				check(box && box.height >= 44, `target ${box?.height} px`);
+			}
+			await p.screenshot({ path: `${out}/text-numbers-phone.png` });
+		} catch (e) {
+			await p.screenshot({ path: `${out}/text-numbers-phone-red.png` });
+			throw e;
+		} finally {
+			await c.close();
+		}
+	},
+	// Job 448 (Soothing 2): the story as a tree, numbers on the text's baseline, sentence parts, ⋯ and its menu, next move
+	async 'soothing-story'() {
+		const { ctx, page } = await open({ width: 1440, height: 900 });
+		try {
+			const story = page.locator('.workbench > .card:not(.diagram-card)');
+			await story.getByRole('button', { name: 'Edit as text' }).click();
+			const field = page.locator('.text-editor textarea');
+			await field.waitFor({ state: 'visible' });
+			// Two levels of questions; the last path is not told to its end, so "Next move" stays open
+			await field.fill(['IT STARTS with a message: [Complaint arrives] at [@Service].', '[@Service] shall [Record complaint] in [#CRM].', 'IF [?Defect confirmed]', '→ yes:',
+				'  IF [?Repair possible]', '  → yes:', '    [@Workshop] shall [Repair goods], deadline [!7 days].', '    MERGE.', '  ELSE → no:',
+				'    [@Accounting] shall [Refund the amount of the complaint to the customer and close the case in the books] with [+Credit note].', '    END: [Refunded].',
+				'  [@Store] shall [Return goods].', '  END: [Repaired].', 'ELSE → no:', '  [@Service] shall [Explain refusal].'].join('\n'));
+			await page.locator('.text-editor').getByRole('button', { name: 'Apply', exact: true }).click();
+			await page.waitForSelector('.course .line[data-line="10"]', { timeout: 10000 });
+			await page.waitForTimeout(500);
+			// (a) every number in the same column, on the baseline of its text (also two levels deep, also wrapped)
+			const lines = await page.locator('.course > .line[data-line]').evaluateAll((els) => els.map((li) => {
+				const num = li.querySelector('.num-button');
+				const txt = li.querySelector('.txt');
+				const r = document.createRange();
+				r.selectNodeContents(num);
+				const n = r.getClientRects()[0];
+				r.selectNodeContents(txt);
+				const t = [...r.getClientRects()].filter((x) => x.width > 0)[0];
+				return { move: li.dataset.line, left: num.getBoundingClientRect().left, right: n.right, numBottom: n.bottom, txtBottom: t.bottom, lines: Math.round(txt.getBoundingClientRect().height / 24) };
+			}));
+			check(lines.length === 11, `${lines.length} numbered lines`);
+			for (const l of lines) {
+				check(Math.abs(l.right - lines[0].right) <= 1, `number of move ${l.move} not in the column (${l.right} / ${lines[0].right})`);
+				check(Math.abs(l.numBottom - l.txtBottom) <= 2, `number of move ${l.move} off the text's baseline (${l.numBottom} / ${l.txtBottom})`);
+			}
+			check(lines.some((l) => l.lines >= 2), 'no wrapped line to measure');
+			// (b) path names at their branch, no number; later answers name their question
+			const heads = await page.locator('.course > .line.path-head').evaluateAll((els) => els.map((e) => ({ text: e.querySelector('.txt').textContent.replace(/\s+/g, ' ').trim(), num: !!e.querySelector('.num-button') })));
+			check(heads.every((h) => !h.num), 'a path heading has a number');
+			check(JSON.stringify(heads.map((h) => h.text)) === JSON.stringify(['yes', 'yes', 'Repair possible? → no', 'Defect confirmed? → no']), `path names ${JSON.stringify(heads)}`);
+			// (c) the chosen line two levels deep colours its way, in the primary colour; another path stays grey
+			await page.locator('.course .line[data-line="6"] .num-button').click();
+			await page.waitForTimeout(500);
+			const way = await page.evaluate(() => {
+				const probe = document.createElement('span');
+				probe.style.color = 'var(--color-primary-element)';
+				document.querySelector('.story2bpmn-workshop').append(probe);
+				const accent = getComputedStyle(probe).color;
+				probe.remove();
+				const hot = [...document.querySelectorAll('.course .rail.hot')].map((r) => getComputedStyle(r, '::before').borderLeftColor);
+				const at = (m) => document.querySelectorAll(`.course .line[data-line="${m}"] .rail.hot`).length;
+				const outerNo = [...document.querySelectorAll('.course > .line.path-head')].pop();
+				return { accent, hot, six: at(6), ten: at(10), outerNo: outerNo.querySelectorAll('.rail.hot, .rail.tick').length, grey: getComputedStyle(outerNo.querySelector('.rail'), '::before').borderLeftColor };
+			});
+			check(way.six >= 1 && way.hot.length >= 5 && way.hot.every((c) => c === way.accent), `way of the chosen line ${JSON.stringify(way)}`);
+			check(way.ten === 0 && way.outerNo === 0 && way.grey !== way.accent, `another path coloured ${JSON.stringify(way)}`);
+			// (d) the legend
+			check(/^Sentence parts:/.test((await story.locator('.key').textContent()).trim()), 'legend does not begin with "Sentence parts:"');
+			// (e) readable parts in light and dark
+			const contrast = () => page.evaluate(() => {
+				const rgb = (c) => c.match(/[\d.]+/g).map(Number);
+				const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+				const over = (fg, bg) => (fg.length < 4 ? fg : [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3])));
+				const lum = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+				const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+				const card = rgb(getComputedStyle(document.querySelector('.workbench > .card:not(.diagram-card)')).backgroundColor);
+				const out = {};
+				for (const sel of ['.o-task', '.o-role', '.o-question', '.filler']) {
+					const el = document.querySelector(`.course .line:not(.chosen) ${sel}`);
+					const s = getComputedStyle(el);
+					const bg = over(rgb(s.backgroundColor), card);
+					out[sel] = Math.round(ratio(over(rgb(s.color), bg), bg) * 100) / 100;
+				}
+				return out;
+			});
+			for (const scheme of ['light', 'dark']) {
+				await page.emulateMedia({ colorScheme: scheme });
+				await page.waitForTimeout(300);
+				const c = await contrast();
+				check(Object.values(c).every((x) => x >= 4.5), `contrast ${scheme} ${JSON.stringify(c)}`);
+				await page.screenshot({ path: `${out}/soothing-story-${scheme}.png` });
+			}
+			await page.emulateMedia({ colorScheme: 'light' });
+			// (f) without fills (forced colours) a role shows its sign
+			await page.emulateMedia({ forcedColors: 'active' });
+			const sign = await page.locator('.course .o-role').first().evaluate((e) => getComputedStyle(e, '::before').content);
+			check(sign === '"@"', `role sign in forced colours: ${sign}`);
+			await page.emulateMedia({ forcedColors: 'none' });
+			// (g) ⋯ only at a hovered line; the menu in groups, Delete last
+			await page.mouse.move(1430, 5);
+			await page.waitForTimeout(300);
+			const more = page.locator('.course .line[data-line="1"] .more');
+			check(await more.evaluate((e) => getComputedStyle(e).opacity) === '0', '⋯ shown at a line not hovered');
+			await page.locator('.course .line[data-line="1"] .txt').hover();
+			await page.waitForTimeout(300);
+			check(await more.evaluate((e) => getComputedStyle(e).opacity) === '1', '⋯ not shown at the hovered line');
+			await more.click();
+			const menu = page.locator('.course .line[data-line="1"] .line-actions');
+			await menu.waitFor({ state: 'visible' });
+			const groups = await menu.locator('.menu-group').evaluateAll((els) => els.map((g) => [...g.querySelectorAll('button')].map((b) => ({ text: b.textContent.trim(), danger: b.classList.contains('danger') }))));
+			const lastItem = groups.at(-1)?.at(-1);
+			check(groups.length >= 2 && lastItem?.text === 'Delete' && lastItem.danger, `menu groups ${JSON.stringify(groups)}`);
+			await more.click();
+			// (h) next move: key fields in mono, 1 still opens the form
+			const kbd = page.locator('.move .option kbd').first();
+			check((await kbd.textContent()).trim() === '1' && /Plex Mono/.test(await kbd.evaluate((e) => getComputedStyle(e).fontFamily)), 'key field 1 not in mono');
+			const forms = () => story.locator('form.form').count();
+			const f0 = await forms();
+			await page.locator('.story2bpmn-workshop .card-head h2').first().click();
+			await page.keyboard.press('1');
+			await page.waitForTimeout(500);
+			check(await forms() > f0, 'key 1 opened no form');
+		} catch (e) {
+			await page.screenshot({ path: `${out}/soothing-story-red.png` });
+			throw e;
 		} finally {
 			await ctx.close();
 		}
@@ -1235,7 +1497,7 @@ const cases = {
 				await ctx.close();
 			}
 		}
-		// Phone: Fit and Follow of the bar only with a diagram; the segment stays where it is
+		// Phone: Fit and Follow (diagram head since job 450) only with a diagram; the segment of the bar stays where it is
 		const ctx = await browser.newContext({ viewport: { width: PHONE.width, height: PHONE.height }, hasTouch: true, isMobile: true, locale: 'en-US', storageState: state });
 		const p = await ctx.newPage();
 		try {
@@ -1246,10 +1508,12 @@ const cases = {
 			const s0 = await seg.boundingBox();
 			await bar.getByRole('tab', { name: 'Diagram' }).tap();
 			await p.waitForTimeout(400);
-			const fit = bar.getByRole('button', { name: 'Fit', includeHidden: true });
-			const follow = bar.getByRole('button', { name: 'Follow', includeHidden: true });
-			check(!await fit.isVisible() && !await follow.isVisible(), 'Fit or Follow shown in the bar without a diagram');
-			check(await look(follow) === await look(fit), `locked Follow looks different from locked Fit (${await look(follow)} vs ${await look(fit)})`);
+			const dhead = p.locator('.diagram-card .card-head');
+			const fit = dhead.getByRole('button', { name: 'Fit', includeHidden: true });
+			const follow = dhead.getByRole('button', { name: 'Follow', includeHidden: true });
+			check(!await fit.isVisible() && !await follow.isVisible(), 'Fit or Follow shown without a diagram');
+			const zout = dhead.getByRole('button', { name: 'Zoom out', includeHidden: true });
+			check(await look(zout) === await look(fit), `locked Zoom out looks different from locked Fit (${await look(zout)} vs ${await look(fit)})`);
 			const s1 = await seg.boundingBox();
 			check(Math.abs(s1.x - s0.x) <= 1 && Math.abs(s1.width - s0.width) <= 1, `the segment moved (${s0.x} → ${s1.x})`);
 			await bar.getByRole('tab', { name: 'Story' }).tap();
@@ -1257,7 +1521,7 @@ const cases = {
 			await p.waitForSelector('.example-note', { timeout: 30000 });
 			await bar.getByRole('tab', { name: 'Diagram' }).tap();
 			await p.waitForTimeout(800);
-			check(await fit.isVisible() && await follow.isVisible(), 'Fit or Follow missing in the bar with a diagram');
+			check(await fit.isVisible() && await follow.isVisible(), 'Fit or Follow missing with a diagram');
 		} catch (e) {
 			await p.screenshot({ path: `${out}/emptyZoom-phone-red.png` });
 			throw e;
@@ -1389,6 +1653,313 @@ const cases = {
 			check(await forms() > f0, '1 after a click into the diagram opened no form in the story');
 		} catch (e) {
 			await page.screenshot({ path: `${out}/keyboard-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 450 (Soothing 4) AK5: the approval sidebar after view B1, the dialog "Ask for approval" with the comparison (B2)
+	async 'soothing-approval'() {
+		const example = readFileSync(process.env.S2B_E2E_FILE, 'utf8');
+		const name = 'Soothing approval.bpmn';
+		const xml = approvedXml(example);
+		const id = await upload(name, xml);
+		await confirmOn(id, name, xml);
+		// A named version "Valid version 1": the Versions tab gives it the valid chip
+		const vurl = `${url}/remote.php/dav/versions/${encodeURIComponent(user)}/versions/${id}`;
+		await new Promise((r) => setTimeout(r, 1500));
+		await upload(name, xml + '\n');
+		const list = await (await fetch(vurl, { method: 'PROPFIND', headers: { Authorization: auth, Depth: '1' } })).text();
+		const vid = [...list.matchAll(/<d:href>[^<]*\/(\d+)\/?<\/d:href>/g)].map((m) => m[1]).filter((v) => v !== String(id))[0];
+		check(vid, `no version of the uploaded file: ${list.replace(/\s+/g, " ").slice(0, 900)}`);
+		const named = await fetch(`${vurl}/${vid}`, { method: 'PROPPATCH', headers: { Authorization: auth, 'Content-Type': 'application/xml' }, body: '<?xml version="1.0"?><d:propertyupdate xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:set><d:prop><nc:version-label>Valid version 1</nc:version-label></d:prop></d:set></d:propertyupdate>' });
+		check(named.status === 207 || named.status === 200, `naming the version: HTTP ${named.status}`);
+		await proposeOn(id);
+		await proposeOn(id);
+		const { ctx, page } = await open({ width: 1366, height: 900, id });
+		const side = page.locator('.story2bpmn-sidebar');
+		const tab = (n) => side.getByRole('tab', { name: n });
+		try {
+			await page.getByRole('button', { name: /^Proposals/ }).first().click();
+			await side.locator('.proposal').first().waitFor({ timeout: 10000 });
+			check(await tab(/^Proposals/).count() === 1 && await tab('Versions').count() === 1 && await tab('Approvals').count() === 1, 'not the tabs Proposals, Versions, Approvals');
+			check(await side.locator('.proposal').count() === 2, `${await side.locator('.proposal').count()} open proposals`);
+			const tabName = async () => (await tab(/^Proposals/).textContent()).trim();
+			check(await tabName() === 'Proposals (2)', `proposals tab reads "${await tabName()}"`);
+			check((await side.locator('.proposal').first().locator('.so-chip--open').textContent()).trim() === 'Undecided', 'no chip "Undecided"');
+			await page.waitForTimeout(600);
+			await page.screenshot({ path: `${out}/soothing-b1.png` });
+			// Accept the first (two-step): the story changes against version 1
+			const accept = side.locator('.proposal').first().locator('[data-decide$=":accepted"]');
+			await accept.click();
+			await accept.click();
+			await side.locator('.decided-proposal').first().waitFor({ timeout: 15000 });
+			check(await side.locator('.proposal').count() === 1, 'the accepted proposal is still open');
+			check(await tabName() === 'Proposals (1)', `after accepting the tab reads "${await tabName()}"`);
+			// Reject the second: it shows "Rejected", without buttons
+			const reject = side.locator('.proposal').first().locator('[data-decide$=":rejected"]');
+			await reject.click();
+			await reject.click();
+			await side.locator('.proposal').first().waitFor({ state: 'detached', timeout: 15000 });
+			const chips = side.locator('.decided-proposal .so-chip');
+			for (let i = 0; i < 20 && !(await chips.allTextContents()).map((x) => x.trim()).includes('Rejected'); i++) await page.waitForTimeout(250);
+			check((await chips.allTextContents()).map((x) => x.trim()).includes('Rejected'), `decided chips ${JSON.stringify(await chips.allTextContents())}`);
+			check(await side.locator('.decided-proposal button').count() === 0, 'buttons on a decided proposal');
+			check(await tabName() === 'Proposals', `with nothing open the tab reads "${await tabName()}"`);
+			// Versions: the state now is a draft, the named version has the valid chip
+			await tab('Versions').click();
+			await side.locator('.current-state .so-chip--closed', { hasText: 'Draft' }).waitFor({ timeout: 10000 });
+			await side.locator('.version .so-chip--ok', { hasText: 'Valid version 1' }).waitFor({ timeout: 10000 });
+			// Approvals: the approval of version 1, and the shares below
+			await tab('Approvals').click();
+			await side.locator('.history-approved .so-chip--closed', { hasText: 'Granted' }).waitFor({ timeout: 10000 });
+			check(await side.getByText('Version 1 approved').count() === 1, 'no "Version 1 approved"');
+			check(await side.getByText('Shared with', { exact: true }).isVisible(), 'no "Shared with"');
+			await page.screenshot({ path: `${out}/soothing-b1-approvals.png` });
+			// The dialog: the comparison with the valid version as a register
+			await page.getByRole('button', { name: /^Ask for approval/ }).first().click();
+			const dialog = page.getByRole('dialog', { name: 'Ask for approval' });
+			await dialog.waitFor({ timeout: 10000 });
+			const diff = dialog.locator('.ask-diff');
+			await diff.waitFor({ timeout: 5000 });
+			check(/1 changed/.test(await diff.locator('.ask-counts').textContent()), `counts "${await diff.locator('.ask-counts').textContent()}"`);
+			const row = diff.locator('.diff-changed').first();
+			check((await row.locator('.so-chip--warn').textContent()).trim() === 'Changed', 'no chip "Changed"');
+			check(/Before:/.test(await row.textContent()), 'no "Before:"');
+			check(/^\d+$/.test((await row.locator('.diff-no').textContent()).trim()), 'no number on the changed row');
+			check(await dialog.getByRole('button', { name: 'Ask for approval', exact: true }).count() === 1, 'no main button "Ask for approval"');
+			await page.waitForTimeout(600);
+			await page.screenshot({ path: `${out}/soothing-b2.png` });
+			await dialog.getByRole('button', { name: 'Cancel' }).click();
+		} catch (e) {
+			await page.screenshot({ path: `${out}/soothing-approval-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 450 (Soothing 4) AK6: the phone after views C1–C3, nothing wider than 390 px
+	async 'soothing-phone'() {
+		const id = await upload('Soothing phone.bpmn');
+		const { ctx, page } = await open({ ...PHONE, id });
+		const fits = async (where) => {
+			const over = await page.evaluate(() => document.scrollingElement.scrollWidth - window.innerWidth);
+			check(over <= 0, `${where}: page ${over} px wider than the screen`);
+		};
+		try {
+			const bar = page.locator('.phone-bar');
+			check(await bar.getByRole('button', { name: 'Undo' }).count() === 1, 'no Undo in the bar');
+			check(await bar.getByRole('tab', { name: 'Story' }).count() === 1 && await bar.getByRole('tab', { name: 'Diagram' }).count() === 1, 'no tabs Story and Diagram');
+			check(await bar.getByRole('button', { name: 'Fit', includeHidden: true }).count() === 0 && await bar.getByRole('button', { name: 'Follow', includeHidden: true }).count() === 0, 'Fit or Follow still in the bar');
+			await fits('story');
+			await page.screenshot({ path: `${out}/soothing-c1.png` });
+			// C2: the diagram tools in the head of the diagram card
+			await bar.getByRole('tab', { name: 'Diagram' }).tap();
+			await page.waitForTimeout(600);
+			check(await bar.getByRole('button', { name: 'Undo' }).isVisible(), 'no Undo with the diagram shown');
+			const head = page.locator('.diagram-card .card-head');
+			for (const n of ['Follow', 'Zoom out', 'Zoom in', 'Fit']) {
+				const b = head.getByRole('button', { name: n, exact: true });
+				check(await b.count() === 1 && await b.isVisible(), `no "${n}" in the diagram head`);
+				const box = await b.boundingBox();
+				check(box.height >= 44 && box.x >= 0 && box.x + box.width <= PHONE.width, `"${n}" ${box.width} × ${box.height} at x ${box.x}`);
+			}
+			await fits('diagram');
+			await page.screenshot({ path: `${out}/soothing-c2.png` });
+			// The ⋯ menu of the head keeps Publish
+			await page.getByRole('button', { name: 'More actions' }).tap();
+			const menu = page.locator('.head-sheet');
+			await menu.waitFor({ state: 'visible' });
+			check(await menu.getByRole('button', { name: 'Publish', exact: true }).count() === 1, 'no Publish in the ⋯ menu');
+			await fits('⋯ menu');
+			await menu.getByRole('button', { name: 'Proposals' }).tap();
+			await page.locator('.story2bpmn-sidebar').waitFor({ state: 'visible', timeout: 10000 });
+			await page.waitForTimeout(400);
+			await fits('sidebar');
+			await page.getByRole('button', { name: 'Back to the story' }).tap();
+			// C3: the move form as a sheet from below
+			await bar.getByRole('tab', { name: 'Story' }).tap();
+			await reopenLast(page);
+			await page.getByRole('button', { name: /Tell now/ }).first().tap();
+			const sheet = page.locator('.move.as-sheet');
+			await sheet.waitFor({ state: 'visible', timeout: 5000 });
+			check((await sheet.locator('.sheet-rubric').textContent()).trim() === 'Next move', `rubric "${(await sheet.locator('.sheet-rubric').textContent()).trim()}"`);
+			await sheet.locator('.option').first().tap();
+			const apply = sheet.getByRole('button', { name: 'Apply' });
+			const cancel = sheet.getByRole('button', { name: 'Cancel' });
+			await apply.waitFor({ state: 'visible', timeout: 5000 });
+			const a = await apply.boundingBox();
+			const c = await cancel.boundingBox();
+			check(c.x < a.x && a.width > c.width * 1.5 && a.height >= 44, `Cancel ${c.x}/${c.width}, Apply ${a.x}/${a.width} × ${a.height}`);
+			await fits('sheet');
+			await page.screenshot({ path: `${out}/soothing-c3.png` });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/soothing-phone-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 451 AK7: the kind of a branch switched in its edit form on the phone; Undo brings the check back
+	async branchKind() {
+		const { ctx, page } = await open(PHONE);
+		try {
+			const line = page.locator('.workbench .line[data-line="5"]');
+			check(/Amount over 5000/.test(await line.locator('.txt').first().textContent()), 'line 6 is not the check');
+			const more = page.locator('.line-tap').getByRole('button', { name: 'More' });
+			for (let i = 0; i < 2 && !(await more.isVisible()); i++) {
+				await line.locator('.num').tap();
+				await page.waitForTimeout(300);
+			}
+			await more.tap();
+			await page.locator('.bottom-sheet').getByRole('button', { name: 'Edit', exact: true }).tap();
+			const kind = page.getByLabel('What kind of branch?');
+			await kind.waitFor({ state: 'visible', timeout: 5000 });
+			check(await kind.inputValue() === '', `kind not "checked": ${await kind.inputValue()}`);
+			await kind.selectOption('concurrent');
+			check(await page.getByRole('list', { name: 'Branches' }).locator('li').count() === 2, 'not two branches after the switch');
+			const form = page.locator('form.form');
+			const box = await form.boundingBox();
+			check(box && box.x >= 0 && box.x + box.width <= 391, `form wider than the phone (${box?.x} + ${box?.width})`);
+			await page.screenshot({ path: `${out}/branch-kind-phone.png` });
+			await form.getByRole('button', { name: 'Apply' }).tap();
+			await page.waitForFunction(() => /IN PARALLEL/.test(document.querySelector('.workbench .line[data-line="5"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+			await page.locator('.phone-bar').getByRole('button', { name: 'Undo' }).tap();
+			await page.waitForFunction(() => /Amount over 5000/.test(document.querySelector('.workbench .line[data-line="5"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/branch-kind-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 455 AK9: a path of a check with three paths moved down from the ⋯ sheet of its heading; Undo brings it back
+	async swapPath() {
+		const { ctx, page } = await open(PHONE);
+		const lineText = (i) => page.locator(`.workbench .line[data-line="${i}"] .txt`).first().textContent();
+		try {
+			// A third path on the check, told through the text (the example's check has two).
+			await page.getByRole('button', { name: 'More actions' }).tap();
+			await page.locator('.head-sheet').getByRole('button', { name: 'Edit as text', exact: true }).tap();
+			const ed = page.locator('.text-editor.full');
+			await ed.waitFor({ state: 'visible' });
+			const field = ed.locator('textarea');
+			const text = (await field.inputValue()).replace('ELSE → no:', '→ unclear:\n  [@Accounting] shall [Ask the manager].\n  MERGE.\nELSE → no:');
+			await field.fill(text);
+			// The phone's full screen editor applies with "Done".
+			await ed.getByRole('button', { name: 'Done', exact: true }).tap();
+			await ed.waitFor({ state: 'detached', timeout: 30000 });
+			check(/Approve payment/.test(await lineText(6)), 'line 7 is not on the first path');
+			const more = page.locator('.workbench .line [data-menu="p5.0"]');
+			await more.waitFor({ state: 'visible', timeout: 5000 });
+			const box = await more.boundingBox();
+			check(box && box.width >= 44 && box.height >= 44, `⋯ of the path heading too small (${box?.width} × ${box?.height})`);
+			check(!(await page.locator('.workbench .line [data-menu="p5.2"]').count()), 'the otherwise path has a ⋯');
+			await more.tap();
+			const sheet = page.locator('.bottom-sheet');
+			check(!(await sheet.getByRole('button', { name: 'Move path up' }).count()), 'first path offers "Move path up"');
+			await sheet.getByRole('button', { name: 'Move path down' }).tap();
+			await page.waitForFunction(() => /Ask the manager/.test(document.querySelector('.workbench .line[data-line="6"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+			await page.screenshot({ path: `${out}/swap-path-phone.png` });
+			await page.locator('.phone-bar').getByRole('button', { name: 'Undo' }).tap();
+			await page.waitForFunction(() => /Approve payment/.test(document.querySelector('.workbench .line[data-line="6"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/swap-path-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	// Job 456 AK9: "From here on for all paths" from the ⋯ sheet of a line: it comes after the merge, Undo brings it back
+	async joinAll() {
+		const { ctx, page } = await open(PHONE);
+		const line = (i) => page.locator(`.workbench .line[data-line="${i}"]`).first();
+		// Where "Pay invoice" stands (earlier cases may have changed the story): its move number, -1 if missing.
+		const payAt = () => page.evaluate(() => {
+			const l = [...document.querySelectorAll('.workbench .line[data-line]')].find((e) => /Pay invoice/.test(e.querySelector('.txt')?.textContent ?? ''));
+			return l ? Number(l.getAttribute('data-line')) : -1;
+		});
+		try {
+			// A story of its own (earlier cases may have changed the example): "Pay invoice" and the end told on
+			// the yes path, the no path still open.
+			await page.getByRole('button', { name: 'More actions' }).tap();
+			await page.locator('.head-sheet').getByRole('button', { name: 'Edit as text', exact: true }).tap();
+			const ed = page.locator('.text-editor.full');
+			await ed.waitFor({ state: 'visible' });
+			const field = ed.locator('textarea');
+			const text = 'IT STARTS: [Invoice received] at [@Accounting].\n[@Accounting] shall [Check invoice].\nIF [?Amount over 5000 €]\n→ yes:\n  [@Manager] shall [Approve payment].\n  [@Accounting] shall [Pay invoice].\n  END: [Paid].\nELSE → no:\n  STILL OPEN.';
+			await field.fill(text);
+			await ed.getByRole('button', { name: 'Done', exact: true }).tap();
+			await ed.waitFor({ state: 'detached', timeout: 30000 });
+			const from = await payAt();
+			check(from > 0, 'no line "Pay invoice"');
+			const depth = async (i) => Number(await line(i).evaluate((e) => getComputedStyle(e).getPropertyValue('--t')));
+			const before = await depth(from);
+			// A tap on the line chosen already takes the choice away: tap until its actions show.
+			const more = page.locator('.line-tap').getByRole('button', { name: 'More' });
+			for (let i = 0; i < 2 && !(await more.isVisible()); i++) {
+				await line(from).locator('.num').tap();
+				await page.waitForTimeout(300);
+			}
+			await more.tap();
+			const item = page.locator('.bottom-sheet').getByRole('button', { name: 'From here on for all paths' });
+			const box = await item.boundingBox();
+			check(box && box.height >= 44, `menu item too small (${box?.height})`);
+			await item.tap();
+			// Moves now: … merge (from), still open then merge, pay (from + 2), end.
+			await page.waitForFunction((want) => [...document.querySelectorAll('.workbench .line[data-line]')].some((e) => e.getAttribute('data-line') === String(want) && /Pay invoice/.test(e.querySelector('.txt')?.textContent ?? '')), from + 2, { timeout: 10000 });
+			check(/MERGE/.test(await line(from).locator('.txt').textContent()), 'no merge before the line');
+			check((await depth(from + 2)) < before, 'the line is not on the common path');
+			await page.screenshot({ path: `${out}/join-all-phone.png` });
+			await page.locator('.phone-bar').getByRole('button', { name: 'Undo' }).tap();
+			await page.waitForFunction((want) => /Pay invoice/.test(document.querySelector(`.workbench .line[data-line="${want}"] .txt`)?.textContent ?? ''), from, { timeout: 10000 });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/join-all-red.png` });
+			throw e;
+		} finally {
+			await ctx.close();
+		}
+	},
+	async moveSteps() {
+		const { ctx, page } = await open(PHONE);
+		const txt = (i) => page.locator(`.workbench .line[data-line="${i}"] .txt`).first().textContent();
+		try {
+			// A story of its own: "Check invoice" was told too early, it belongs behind "Pay invoice".
+			await page.getByRole('button', { name: 'More actions' }).tap();
+			await page.locator('.head-sheet').getByRole('button', { name: 'Edit as text', exact: true }).tap();
+			const ed = page.locator('.text-editor.full');
+			await ed.waitFor({ state: 'visible' });
+			await ed.locator('textarea').fill('IT STARTS: [Invoice received] at [@Accounting].\n[@Accounting] shall [Check invoice].\n[@Manager] shall [Approve payment].\n[@Accounting] shall [Pay invoice].\nEND: [Paid].');
+			await ed.getByRole('button', { name: 'Done', exact: true }).tap();
+			await ed.waitFor({ state: 'detached', timeout: 30000 });
+			check(/Check invoice/.test(await txt(1)), 'line 2 is not "Check invoice"');
+			const more = page.locator('.line-tap').getByRole('button', { name: 'More' });
+			for (let i = 0; i < 2 && !(await more.isVisible()); i++) {
+				await page.locator('.workbench .line[data-line="1"] .num').first().tap();
+				await page.waitForTimeout(300);
+			}
+			await more.tap();
+			const item = page.locator('.bottom-sheet').getByRole('button', { name: 'Move …' });
+			const box = await item.boundingBox();
+			check(box && box.height >= 44, `menu item too small (${box?.height})`);
+			await item.tap();
+			const form = page.locator('.move-to-form');
+			await form.waitFor({ state: 'visible' });
+			const where = form.locator('select[data-where]');
+			const wbox = await where.boundingBox();
+			check(wbox && wbox.height >= 40 && wbox.x >= 0 && wbox.x + wbox.width <= PHONE.width + 1, 'select "Where to?" off screen or too small');
+			// Behind line 4 "Pay invoice": before old move 4.
+			await page.screenshot({ path: `${out}/move-steps-form-phone.png` });
+			await where.selectOption('4');
+			await form.getByRole('button', { name: 'Move', exact: true }).tap();
+			await page.waitForFunction(() => /Check invoice/.test(document.querySelector('.workbench .line[data-line="3"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+			check(/Approve payment/.test(await txt(1)), 'line 2 is not "Approve payment" afterwards');
+			check(!(await form.isVisible()), 'the form stays open');
+			await page.screenshot({ path: `${out}/move-steps-phone.png` });
+			await page.locator('.phone-bar').getByRole('button', { name: 'Undo' }).tap();
+			await page.waitForFunction(() => /Check invoice/.test(document.querySelector('.workbench .line[data-line="1"] .txt')?.textContent ?? ''), null, { timeout: 10000 });
+		} catch (e) {
+			await page.screenshot({ path: `${out}/move-steps-red.png` });
 			throw e;
 		} finally {
 			await ctx.close();

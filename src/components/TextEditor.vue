@@ -19,16 +19,17 @@
 				{{ t('story2bpmn', 'Done') }}
 			</button>
 		</div>
-		<p v-else class="label">
-			{{ t('story2bpmn', 'Story text') }}
-		</p>
+		<div v-else class="subhead editor-subhead">
+			<span class="so-rubric label">{{ t('story2bpmn', 'Story text') }}</span>
+			<span v-if="status.errors.length" class="so-chip so-chip--danger">{{ t('story2bpmn', 'Not taken over') }}</span>
+		</div>
 		<div ref="frame" class="editor">
-			<div class="gutter" aria-hidden="true"><span v-for="(_, i) in lines" :key="i" :class="{ red: i + 1 === missingLine }">{{ i + 1 }}</span></div>
+			<div class="gutter" aria-hidden="true"><span v-for="(num, i) in numbers" :key="i" :class="{ err: i + 1 === missingLine }">{{ num ?? '' }}</span></div>
 			<div class="fieldWrap">
 				<pre class="color" aria-hidden="true"><span v-for="(z, i) in lines"
 					:key="i"
 					class="tz"
-					:class="{ missing: i + 1 === missingLine }"><template v-for="(part, j) in textParts(z)" :key="j"><b v-if="part.subtype === 'sw'" class="sw">{{ part.text }}</b><span v-else-if="part.subtype === 'o'" :class="['o', 'o-' + part.object]">{{ part.text }}</span><template v-else>{{ part.text }}</template></template>{{ z ? '' : ' ' }}</span></pre>
+					:class="{ missing: i + 1 === missingLine }"><template v-for="(part, j) in textParts(z)" :key="j"><span v-if="part.subtype === 'sw'" class="sw">{{ part.text }}</span><span v-else-if="part.subtype === 'o'" :class="['o', 'o-' + part.object]"><template v-for="(b, k) in bracketed(part.text)" :key="k"><span v-if="b.mark" class="br">{{ b.text }}</span><template v-else>{{ b.text }}</template></template></span><template v-else>{{ part.text }}</template></template>{{ z ? '' : ' ' }}</span></pre>
 				<textarea ref="field"
 					v-model="text"
 					wrap="off"
@@ -45,15 +46,21 @@
 					@keydown.esc.prevent="requestCancel()" />
 			</div>
 		</div>
-		<p id="story2bpmn-text-status"
-			class="t-status"
-			:class="status.errors.length ? 'error' : 'ok'"
-			:role="status.errors.length ? 'alert' : 'status'">
-			<template v-if="status.errors.length">
-				<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
-				<span>{{ status.errors.join(' · ') }}</span>
-			</template>
-			<template v-else-if="checking">
+		<div v-if="status.errors.length"
+			id="story2bpmn-text-status"
+			class="t-status so-notice so-notice--danger"
+			role="alert">
+			<svg class="so-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6" /><path d="m9 9 6 6M15 9l-6 6" fill="none" stroke="currentColor" stroke-width="1.6" /></svg>
+			<div>
+				<span class="so-notice__tag"><b>{{ t('story2bpmn', 'Not taken over:') }}</b><template v-if="errorNumber !== null">{{ ' ' }}<template v-for="(f, k) in figures(t('story2bpmn', 'Line {number}', { number: errorNumber }))" :key="k"><span v-if="f.num" class="so-num">{{ f.text }}</span><template v-else>{{ f.text }}</template></template></template></span>
+				<p>{{ errorText }}</p>
+			</div>
+		</div>
+		<p v-else
+			id="story2bpmn-text-status"
+			class="t-status ok"
+			role="status">
+			<template v-if="checking">
 				<span>{{ t('story2bpmn', 'Checking …') }}</span>
 			</template>
 			<template v-else-if="status.checked">
@@ -67,12 +74,20 @@
 		</p>
 		<details class="writingAid" :open="!phone">
 			<summary>{{ t('story2bpmn', 'Writing guide') }}</summary>
-			<dl>
-				<template v-for="(m, i) in pattern" :key="i">
-					<dt>{{ m }}</dt>
-					<dd>{{ explanation[i] }}</dd>
-				</template>
-			</dl>
+			<table class="so-table">
+				<tbody>
+					<tr v-for="(m, i) in pattern" :key="i">
+						<td class="pattern">
+							<template v-for="(alt, k) in m.split('  ·  ')" :key="k">
+								<span v-if="k" class="alt-sep" aria-hidden="true"> · </span><span class="alt"><StoryParts :parts="lineParts(alt)" /></span>
+							</template>
+						</td>
+						<td class="so-text-muted">
+							{{ explanation[i] }}
+						</td>
+					</tr>
+				</tbody>
+			</table>
 		</details>
 		<div v-if="!phone" class="buttons">
 			<button type="button"
@@ -90,16 +105,21 @@
 
 <script>
 import { n, t } from '@nextcloud/l10n'
-import { helpPattern, sameStory, textChecker, textParts } from '../workbench.ts'
+import { editorNumbers, helpPattern, lineCaret, lineParts, sameStory, textChecker, textParts, withoutLine } from '../workbench.ts'
+import { figures } from '../headChips.ts'
+import StoryParts from './StoryParts.vue'
 import { cancelStep, textChanged } from '../textDiscard.ts'
 import { createArm } from '../armed.ts'
 import { newWorker } from '../checkerWorker.ts'
 
 export default {
 	name: 'TextEditor',
+	components: { StoryParts },
 	props: {
 		/** Story text when opened */
 		start: { type: String, required: true },
+		/** The numbers the story shows on the lines of `start` (storyNumbers), or null (job 449). */
+		startNumbers: { type: Array, default: null },
 		language: { type: String, required: true },
 		/** The moves when opened: an unchanged "continue at" keeps which of two steps of the same name it leads to. */
 		previous: { type: Array, default: () => [] },
@@ -108,6 +128,8 @@ export default {
 		phone: { type: Boolean, default: false },
 		/** Text to show instead of `start` (a restored typed text, job 406); it counts as changed. */
 		initial: { type: String, default: null },
+		/** The text line the caret starts on ("Edit as text" of a line, job 453), or null; ignored with `initial`. */
+		cursorLine: { type: Number, default: null },
 	},
 	// edited: the typed text while it differs from `start`, else null (job 406).
 	emits: ['apply', 'cancel', 'edited'],
@@ -117,7 +139,7 @@ export default {
 			// "Cancel" clicked once with a changed text: the next press discards it.
 			armed: false,
 			// checked: false until the first check is in; for exactly this text.
-			status: { checked: false, text: null, number: 0, errors: [], line: 0, moves: [] },
+			status: { checked: false, text: null, number: 0, errors: [], line: 0, moves: [], numbers: [] },
 			clock: null,
 			checking: false,
 		}
@@ -131,6 +153,19 @@ export default {
 		},
 		cancelText() {
 			return this.armed ? t('story2bpmn', 'Really discard?') : t('story2bpmn', 'Cancel')
+		},
+		/** The number column: the numbers the story shows, headings without (job 449). */
+		numbers() {
+			return editorNumbers(this.text, this.startNumbers ? { text: this.start, numbers: this.startNumbers } : null, this.status, this.language)
+		},
+		/** The number of the line not taken over, as the story shows it; null without one. */
+		errorNumber() {
+			if (!this.status.errors.length || !this.status.line || this.status.text !== this.text) return null
+			return this.status.numbers?.[this.status.line - 1] ?? null
+		},
+		/** The messages without their "Line n: " (the number stands in the tag). */
+		errorText() {
+			return this.status.errors.map(withoutLine).join(' · ')
 		},
 		missingLine() {
 			return this.status.errors.length ? this.status.line : 0
@@ -187,6 +222,16 @@ export default {
 		}
 		this.check()
 		this.$refs.field.focus()
+		// Opened from the menu of a line: the caret stands at the start of that line, the line in view (job 453).
+		if (this.initial === null && this.cursorLine !== null) {
+			const at = lineCaret(this.text, this.cursorLine)
+			this.$refs.field.setSelectionRange(at, at)
+			this.$refs.frame.scrollLeft = 0
+			this.showCursor()
+			// The card around may still be scrolled down as the story list was: bring the line into the window too
+			// (centred: a sticky card head would cover a line scrolled just to the top).
+			this.$refs.frame.querySelectorAll('.gutter span')[this.cursorLine]?.scrollIntoView?.({ block: 'center', inline: 'nearest' })
+		}
 	},
 	beforeUnmount() {
 		clearTimeout(this.clock)
@@ -197,6 +242,14 @@ export default {
 		t,
 		n,
 		textParts,
+		lineParts,
+		figures,
+		/** A sentence part of the text with its brackets and sign apart: they are shown quietly. */
+		bracketed(text) {
+			const m = text.match(/^(\[[@#+!?]?)([\s\S]*?)(\]?)$/)
+			if (!m) return [{ text, mark: false }]
+			return [{ text: m[1], mark: true }, { text: m[2], mark: false }, { text: m[3], mark: true }].filter((b) => b.text)
+		},
 		/** The text field never scrolls itself (otherwise it drifts against the color layer); the frame scrolls. */
 		hold(e) {
 			e.target.scrollTop = 0
@@ -231,7 +284,7 @@ export default {
 			// Typed on in the meantime: this result is outdated.
 			if (text !== this.text) return
 			this.checking = false
-			this.status = { checked: true, text, number: r.number, errors: r.errors, line: r.line ?? 0, moves: r.moves }
+			this.status = { checked: true, text, number: r.number, errors: r.errors, line: r.line ?? 0, moves: r.moves, numbers: r.numbers ?? [] }
 		},
 		/** Esc, "Cancel", "Edit as text": a changed text is only discarded on the second press (job 406). `by`: the outside button pressed ("Edit as text"), it keeps the armed state too. */
 		requestCancel(by = null) {
@@ -256,7 +309,7 @@ export default {
 		},
 		/** Error from outside (e.g. rejected by the replay): show it, the editor stays open. */
 		showError(errors) {
-			this.status = { checked: true, text: this.text, number: 0, errors, line: 0, moves: [] }
+			this.status = { checked: true, text: this.text, number: 0, errors, line: 0, moves: [], numbers: [] }
 			this.$refs.field.focus()
 		},
 	},

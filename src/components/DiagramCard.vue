@@ -8,12 +8,11 @@
 			<h2 id="story2bpmn-h-diagram">
 				{{ view.sub?.trigger ? t('story2bpmn', 'Diagram · at any time') : view.sub ? t('story2bpmn', 'Diagram · subprocess') : t('story2bpmn', 'Diagram') }}
 			</h2>
-			<span class="number">{{ view.svg ? state : '' }}</span>
+			<span class="number"><template v-for="(f, i) in figures(view.svg ? state : '')" :key="i"><b v-if="f.num" class="so-num">{{ f.text }}</b><template v-else>{{ f.text }}</template></template></span>
 			<div class="right">
-				<!-- Phone: Follow and Fit are in the bar, publishing and approval in the ⋯ sheet of the header. -->
+				<!-- Phone (view C2, job 450): Follow, zoom and Fit here too; publishing and approval in the ⋯ sheet of the header. -->
 				<!-- Without a diagram Follow and the zoom group are hidden but keep their room: the head does not jump with the first move. -->
-				<button v-if="!phone"
-					type="button"
+				<button type="button"
 					class="button quiet follow"
 					:class="{ unshown: !view.svg }"
 					:disabled="!view.svg"
@@ -44,11 +43,11 @@
 						@click="task('+')">
 						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
 					</button>
-					<button v-if="!phone"
-						type="button"
-						class="button"
+					<button type="button"
+						class="button fit"
 						:disabled="!view.svg"
 						:title="t('story2bpmn', 'Fit')"
+						:aria-label="t('story2bpmn', 'Fit')"
 						:aria-pressed="fitted ? 'true' : 'false'"
 						@click="task('fit')">
 						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4M20 9V5h-4M4 15v4h4M20 15v4h-4" /></svg>
@@ -68,7 +67,7 @@
 					<span v-if="copies" class="publish-wrap">
 						<button type="button"
 							class="button"
-							:class="view.done ? 'main' : 'quiet'"
+							:class="!view.done ? 'quiet' : rights.approve ? '' : 'main'"
 							:aria-disabled="busy || !view.done ? 'true' : 'false'"
 							:aria-describedby="view.done ? undefined : 'story2bpmn-publish-why'"
 							:title="view.done ? undefined : t('story2bpmn', 'Publish once every path is told to its end.')"
@@ -162,6 +161,8 @@
 				<div v-else class="sheet empty">
 					<div class="empty-sheet">
 						<strong>{{ t('story2bpmn', 'No diagram yet') }}</strong>
+						<!-- What the app is for: only here, on the empty start of a process, no longer in the head (job 447). -->
+						<span v-if="!view.sub && !view.moves?.length" class="about">{{ t('story2bpmn', 'Tell a process step by step and get a BPMN diagram. For documentation, not for execution.') }}</span>
 						{{ t('story2bpmn', 'It appears with the first move and grows with every line of the story.') }}
 					</div>
 				</div>
@@ -210,6 +211,7 @@ import { nextTick } from 'vue'
 import NcActions from '@nextcloud/vue/components/NcActions'
 import NcActionButton from '@nextcloud/vue/components/NcActionButton'
 import { anchorScroll, bandHeight, canDownload, clampZoom, diagramKey, fitScale, followScroll, nextLevel, overviewSize, startZoom, wheelZoom, zoomBounds, OVERVIEW_KEY } from '../diagramView.ts'
+import { figures } from '../headChips.ts'
 
 /** Padding of the sheet around the SVG (CSS .sheet). */
 const PAD = 10
@@ -434,6 +436,7 @@ export default {
 		if (this.pinchFrame) cancelAnimationFrame(this.pinchFrame)
 	},
 	methods: {
+		figures,
 		t,
 		svg() {
 			return this.$refs.sheet?.querySelector('svg')

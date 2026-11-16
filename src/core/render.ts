@@ -61,10 +61,48 @@ const FONT = 12.5;
 /** Same as --accent in the UI; the preview replaces the colour via CSS. */
 const HERE = '#1a4d8f';
 
+/** Least distance between a node caption and the lane header (bug of 2026-11-15: start captions ran into it). */
+const HEAD_GAP = 12;
+
+/** If an arrow leaves the wait downwards (return path), the name would lie centred on it: it moves right. */
+function nameRight(ir: ProcessIR, n: Node, positions: PositionMap): boolean {
+  return (n.kind === 'wait' || n.kind === 'send') && ir.edges.some((e) => edgePoints(ir, e, positions)?.some((pt) => {
+    const raw = positions[n.id];
+    return Math.abs(pt.x - (raw.x + 18)) < 1 && Math.abs(pt.y - (raw.y + 36)) < 1;
+  }));
+}
+
+/** Width of a small caption line, estimated as in layout.ts (0.56 x font size per character). */
+const smallWidth = (z: string) => z.length * SMALL * 0.56;
+
+/**
+ * Left edge of the leftmost node caption in BPMN coordinates: the names below the events
+ * (as nodes() draws them) and the captions of exceptions and questions (pagesCaption).
+ */
+export function captionsLeft(ir: ProcessIR, positions: PositionMap): number {
+  let left = Infinity;
+  for (const n of ir.nodes) {
+    const q = positions[n.id];
+    if (!q) continue;
+    const b = pagesCaption(ir, n, positions);
+    if (b) left = Math.min(left, b.x);
+    if (n.name && (n.kind === 'start' || n.kind === 'end' || n.kind === 'wait' || n.kind === 'send')) {
+      const m = q.x + sizeOf(n).w / 2;
+      const w = Math.max(...wrap(n.name, 18).map(smallWidth));
+      left = Math.min(left, nameRight(ir, n, positions) ? m + 6 : m - w / 2);
+    }
+  }
+  return left;
+}
+
 /** All drawing commands in BPMN coordinates: x to the right, y downwards. */
 export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions = {}): Scene {
   const ext = extent(positions, ir);
-  const dx = MARGIN - ext.x + (ir.lanes.length ? 60 : 0);
+  // The lane header ends 26 left of ext.x (pool 90 left of ext.x, pool head 30, lane head 34).
+  // A caption keeps HEAD_GAP from it; if one comes closer, the content moves right by pad,
+  // the pool and lane headers stay where they are and the pool grows.
+  const pad = ir.lanes.length ? Math.max(0, Math.ceil(ext.x - 26 + HEAD_GAP - captionsLeft(ir, positions))) : 0;
+  const dx = MARGIN - ext.x + (ir.lanes.length ? 60 : 0) + pad;
   const dy = MARGIN - ext.y;
   const p = (id: string): Position | undefined => {
     const q = positions[id];
@@ -72,7 +110,7 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
   };
 
   const prims: Prim[] = [];
-  let width = ext.w + 2 * MARGIN + (ir.lanes.length ? 160 : 0);
+  let width = ext.w + 2 * MARGIN + (ir.lanes.length ? 160 : 0) + pad;
   let height = ext.h + 2 * MARGIN;
   // Without lanes the legend spans across the content.
   let left = MARGIN;
@@ -87,8 +125,8 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
   if (bands.length) {
     const above = bands[0].y + dy;
     const boxHeight = bands.reduce((s, b) => s + b.height, 0);
-    left = ext.x + dx - 90;
-    boxWidth = ext.w + 190;
+    left = ext.x + dx - pad - 90;
+    boxWidth = ext.w + 190 + pad;
     below = above + boxHeight;
     prims.push({ t: 'rect', x: left, y: above, w: boxWidth, h: boxHeight, fill: F.white, stroke: F.line, sw: S.pool });
     prims.push({ t: 'rect', x: left, y: above, w: 30, h: boxHeight, fill: F.head, stroke: F.line, sw: S.pool });
@@ -137,11 +175,7 @@ export function scene(ir: ProcessIR, positions: PositionMap, opts: RenderOptions
     if (!q) continue;
     const start = prims.length;
     const b = pagesCaption(ir, n, positions);
-    // If an arrow leaves the wait downwards (return path), the name would lie centred on it.
-    const downward = (n.kind === 'wait' || n.kind === 'send') && ir.edges.some((e) => edgePoints(ir, e, positions)?.some((pt) => {
-      const raw = positions[n.id];
-      return Math.abs(pt.x - (raw.x + 18)) < 1 && Math.abs(pt.y - (raw.y + 36)) < 1;
-    }));
+    const downward = nameRight(ir, n, positions);
     // Draw before the node: captions stay readable.
     if (n.id === opts.here) {
       const s = sizeOf(n);
@@ -915,12 +949,12 @@ export async function toPdf(ir: ProcessIR, positions: PositionMap, opts: PdfOpti
     write(page, t('So liest man den Text', 'How to read the text'), R, y + 22, 11, { bold: true });
     const help = ir.language === 'en'
       ? [['IT STARTS', 'How the process begins, and with whom.'], ['IF … ELSE', 'Two or more paths. Exactly one is taken.'],
-         ['IN CASE OF', 'Something can interrupt the step before.'], ['WAIT FOR', 'The process stops until something arrives.'],
+         ['EXCEPTION', 'Something can interrupt the step before.'], ['WAIT FOR', 'The process stops until something arrives.'],
          ['CONTINUE AT', 'The path jumps back to a step.'], ['BACK ON THE PATH', 'A postponed path continues here.'],
          ['END', 'This path ends here.'], [t('Einrückung', 'Indent'), 'A side path. Afterwards it continues on the left.']]
       : [['ES BEGINNT', 'So fängt der Ablauf an, und bei wem.'], ['WENN … SONST', 'Zwei oder mehr Wege. Genau einer wird gegangen.'],
-         ['FALLS', 'Am Schritt davor kann etwas dazwischenkommen.'], ['WARTEN AUF', 'Der Ablauf steht, bis etwas ankommt.'],
-         ['WEITER BEI', 'Der Weg springt zurück zu einem Schritt.'], ['WEITER AUF DEM WEG', 'Ein zurückgestellter Weg geht hier weiter.'],
+         ['AUSNAHME', 'Am Schritt davor kann etwas dazwischenkommen.'], ['WARTEN AUF', 'Der Ablauf steht, bis etwas ankommt.'],
+         ['WEITER BEI', 'Der Weg springt zurück zu einem Schritt.'], ['WIEDER AUF DEM WEG', 'Ein zurückgestellter Weg geht hier weiter.'],
          ['ENDE', 'Hier hört dieser Weg auf.'], ['Einrückung', 'Ein Nebenweg. Danach geht es links weiter.']];
     help.forEach(([a, b], i) => {
       const xx = [R, R + 262][i % 2];

@@ -171,7 +171,9 @@ test('lineParts: signal word, object kinds, text', () => {
 		{ subtype: 'sw', text: 'ES BEGINNT' },
 		{ subtype: 'text', text: ': ' },
 		{ subtype: 'o', text: 'Rechnung geht ein', object: 'task' },
-		{ subtype: 'text', text: ' bei ' },
+		{ subtype: 'text', text: ' ' },
+		{ subtype: 'filler', text: 'bei' },
+		{ subtype: 'text', text: ' ' },
 		{ subtype: 'o', text: 'Buchhaltung', object: 'role' },
 		{ subtype: 'text', text: '.' },
 	]);
@@ -309,7 +311,8 @@ test('Text AK2: an appended line "Quatsch hier" names its number, otherwise the 
 		const f = checkText(text + '\nQuatsch hier', language);
 		assert.equal(f.line, lines + 1);
 		assert.equal(f.errors.length, 1);
-		assert.equal(f.errors[0].match(pattern)?.[1], String(lines + 1));
+		// Job 449: the number it would have in the story, the next move.
+		assert.equal(f.errors[0].match(pattern)?.[1], String(WITH_NAME.length + 1));
 	}
 });
 
@@ -317,8 +320,8 @@ test('Text AK3: error text gives no moves, empty text zero moves', () => {
 	const f = textMoves('ES BEGINNT: [A] bei [@B].\n\nirgendwas', WITH_NAME, 'de');
 	assert.deepEqual(f.moves, []);
 	assert.equal(f.line, 3);
-	assert.match(f.errors[0], /^Zeile 3:/);
-	assert.deepEqual(textMoves('', WITH_NAME, 'de'), { moves: [], number: 0, errors: [] });
+	assert.match(f.errors[0], /^Zeile 2:/);
+	assert.deepEqual(textMoves('', WITH_NAME, 'de'), { moves: [], number: 0, errors: [], numbers: [null] });
 	assert.deepEqual(checkText('  \n\n', 'de'), { number: 0, errors: [] });
 	// Error without a specific line ("was zuerst passiert" without a heading): no number.
 	const z = checkText('ES BEGINNT: [A] bei [@B].\nWAS ZUERST PASSIERT:', 'de');
@@ -562,11 +565,12 @@ test('379 round 1: every object kind of the story text has its colour class and 
 		.map((p) => p.find((x) => x.subtype === 'o')!.object!);
 	assert.deepEqual(kinds, ['task', 'role', 'system', 'document', 'deadline', 'question', 'signal', 'item']);
 	for (const k of kinds) {
-		assert.match(css, new RegExp(`\\.o-${k} \\{ background: var\\(--o-${k}\\)`), k);
-		assert.equal((css.match(new RegExp(`--o-${k}:`, 'g')) ?? []).length, 3, `--o-${k} in light, dark and dark media`);
+		// Job 448: each kind has its own look (tint, frame or mark) from Soothing tokens, no --o- variables any more
+		assert.match(css, new RegExp(`\\.story2bpmn-workshop \\.o-${k}[ ,]`), k);
 		assert.ok(keyNames.includes(k), `${k} in objectText`);
 	}
 	assert.deepEqual([...keyNames].sort(), [...kinds].sort());
+	assert.doesNotMatch(css, /--o-/);
 	for (const part of textParts('[+Delivery note]')) if (part.subtype === 'o') assert.equal(part.object, 'document');
 });
 

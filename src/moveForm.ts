@@ -36,9 +36,12 @@ type Values = Record<string, string | undefined>;
  * does not ask for it. End offers only the kinds that work at this point (plus the
  * current value when changing).
  */
-export function fields(subtype: MoveKind, values: Values = {}, endKinds: string[] = END_KINDS, inner = false, startKinds: string[] = START_KINDS): Field[] {
+export function fields(subtype: MoveKind, values: Values = {}, endKinds: string[] = END_KINDS, inner = false, startKinds: string[] = START_KINDS, switchable = false): Field[] {
 	const first = subtype === 'decision' && values.subtype === 'first';
 	let list = FIELDS[first ? 'first' : subtype] ?? [];
+	// The edit form of a branch (job 451): its kind can be any of the three kinds of branch.
+	if (switchable && subtype === 'concurrent') list = [A('subtype', BRANCH_KINDS)];
+	if (switchable && subtype === 'decision') list = list.map((f) => (f.key === 'subtype' ? A('subtype', BRANCH_KINDS) : f));
 	// The further paths sit between the first path and the last one.
 	if (subtype === 'decision') {
 		const more = Array.from({ length: morePaths(values) }, (_, j) => (first ? [T(`more${j}`), A(`more${j}Kind`, EVENT_KINDS)] : [T(`more${j}`)])).flat();
@@ -54,6 +57,8 @@ export function fields(subtype: MoveKind, values: Values = {}, endKinds: string[
 		.map((f) => (subtype === 'end' && f.key === 'subtype'
 			? { ...f, values: f.values!.filter((w) => w === (values.subtype ?? '') || endKinds.includes(w)) }
 			: f))
+		// An event kind still to choose after a switch to "what comes first" (job 451): empty first, then required.
+		.map((f) => (first && /Kind$/.test(f.key) && values[f.key] === '' ? { ...f, values: ['', ...f.values!] } : f))
 		// A further trigger: only the kinds that work here (one plain trigger at most), plus its current kind.
 		.map((f) => (subtype === 'orStart' && f.key === 'subtype'
 			? { ...f, values: f.values!.filter((w) => w === values.subtype || startKinds.includes(w)) }
@@ -121,6 +126,43 @@ export function switchKind(values: Values, language: Language): Values {
 	return v;
 }
 
+/** The kinds of branch the edit form of a branch offers (job 451): checked, what comes first, in parallel. */
+export const BRANCH_KINDS = ['', 'first', 'concurrent'];
+
+/** The move a form tells: for the edit form of a branch in parallel when its kind says so, else a decision. */
+export const branchMove = (subtype: MoveKind, values: Values, switchable: boolean): MoveKind =>
+	(!switchable || (subtype !== 'decision' && subtype !== 'concurrent') ? subtype : values.subtype === 'concurrent' ? 'concurrent' : 'decision');
+
+/**
+ * The edit form of a branch switched to another kind (job 451): the number of paths and their order stay,
+ * the last path stays the last one (the otherwise path of a check). Names stay where both kinds have them;
+ * event kinds of "what comes first" not known yet stay empty (required), as does the question of a check.
+ * From in parallel to a check: yes / no as for a new check. `from`: the kind before the switch; `original`:
+ * the values the form opened with (back to their kind gives them back).
+ */
+export function switchBranch(values: Values, from: string, language: Language, original?: Values): Values {
+	const to = values.subtype ?? '';
+	if (to === from) return values;
+	if (original && (original.subtype ?? '') === to) return { ...original };
+	const n = from === 'concurrent' ? branchCount(values) : 2 + morePaths(values);
+	if (to === 'concurrent') return n > 2 ? { subtype: 'concurrent', branches: String(n) } : { subtype: 'concurrent' };
+	const names = from === 'concurrent'
+		? Array.from({ length: n }, () => '')
+		: ['yes', ...Array.from({ length: n - 2 }, (_, j) => `more${j}`), 'no'].map((k) => values[k] ?? '');
+	if (to === '' && from === 'concurrent') {
+		names[0] = tx(language, 'ja', 'yes');
+		names[n - 1] = tx(language, 'nein', 'no');
+	}
+	const v: Values = { subtype: to, ...(to === '' && { question: '' }), yes: names[0], no: names[n - 1] };
+	for (let j = 0; j < n - 2; j++) v[`more${j}`] = names[j + 1];
+	if (to === 'first') {
+		v.yesKind = '';
+		v.noKind = '';
+		for (let j = 0; j < n - 2; j++) v[`more${j}Kind`] = '';
+	}
+	return v;
+}
+
 /** "For each item" switched on: the item empty, the order one after another, so the choice is never blank. */
 export function forEachSwitched(values: Values): Values {
 	return values.forEach === 'yes' ? { ...values, each: values.each ?? '', eachOrder: values.eachOrder || 'sequential' } : values;
@@ -166,7 +208,12 @@ export function prefill(subtype: MoveKind, values: Values, language: Language, r
 export function requiredEmpty(subtype: MoveKind, values: Values): string[] {
 	const empty: string[] = [];
 	for (const f of fields(subtype, values)) {
-		if (f.optional || f.subtype === 'choice') continue;
+		if (f.optional) continue;
+		// The only choice that can be empty: an event kind of "what comes first" after a switch (job 451).
+		if (f.subtype === 'choice') {
+			if (/Kind$/.test(f.key) && values[f.key] === '') empty.push(f.key);
+			continue;
+		}
 		if (f.subtype === 'role' && !(values.role ?? '').trim() && 'newRole' in values) {
 			if (!(values.newRole ?? '').trim()) empty.push('newRole');
 			continue;
@@ -178,6 +225,8 @@ export function requiredEmpty(subtype: MoveKind, values: Values): string[] {
 
 /** Move from the values of the form: texts trimmed, empty optional fields dropped. */
 export function moveFromForm(subtype: MoveKind, values: Values): Move {
+	// The edit form of a branch carries in parallel as its kind (job 451).
+	if (subtype === 'decision' && values.subtype === 'concurrent') subtype = 'concurrent';
 	const z: Record<string, unknown> = { move: subtype };
 	if (subtype === 'concurrent' && branchCount(values) > 2) z.branches = branchCount(values);
 	const more: string[] = [];
@@ -207,4 +256,63 @@ export function moveFromForm(subtype: MoveKind, values: Values): Move {
 	if (more.length) z.more = more;
 	if (kinds.length) z.moreKinds = kinds;
 	return z as unknown as Move;
+}
+
+/** The moves that carry a role (job 454): triggers, tasks and a signal given by another role. */
+const ROLE_MOVES = ['start', 'orStart', 'task', 'sendSignal'];
+/** The role of a move as the core matches lanes: trimmed, case ignored; '' when it has none. */
+const roleOf = (z: Move): string => (ROLE_MOVES.includes(z.move) ? ((z as { role?: string }).role ?? '').trim() : '');
+const roleKey = (name: string): string => name.trim().toLowerCase();
+/** The flow told behind a move (a task with a subprocess, something that can come at any time). */
+const flowOf = (z: Move): Move[] => {
+	const s = (z as { subprocess?: unknown }).subprocess;
+	return Array.isArray(s) ? (s as Move[]) : [];
+};
+
+/** The roles of the whole story, subprocesses and flows of "at any time" included (job 454):
+ *  key = trimmed lower-case name, name = its first spelling in story order, count = moves with it. */
+export function roleUses(moves: Move[]): Map<string, { name: string; count: number }> {
+	const out = new Map<string, { name: string; count: number }>();
+	const walk = (list: Move[]) => {
+		for (const z of list) {
+			const r = roleOf(z);
+			if (r) {
+				const u = out.get(roleKey(r));
+				if (u) u.count++;
+				else out.set(roleKey(r), { name: r, count: 1 });
+			}
+			walk(flowOf(z));
+		}
+	};
+	walk(moves);
+	return out;
+}
+
+/** Every move of the whole story with role `from` (case ignored) gets role `to` (job 454). A new array. */
+export function renameRole(moves: Move[], from: string, to: string): Move[] {
+	const key = roleKey(from);
+	return moves.map((z) => {
+		let m = roleOf(z) && roleKey(roleOf(z)) === key ? ({ ...z, role: to } as Move) : z;
+		const s = flowOf(z);
+		if (s.length) m = { ...m, subprocess: renameRole(s, from, to) } as Move;
+		return m;
+	});
+}
+
+export type RoleChange = { from: string; to: string; count: number; merge: string | null };
+
+/**
+ * Asks "only here or everywhere?" (job 454): the edit form of a move with a role whose role changed, while
+ * the old role is on at least two moves. `merge`: the spelling of the new role when it is another role
+ * already in the story (both become one). Null: apply as it is.
+ */
+export function roleChange(start: Values, move: Move, uses: Map<string, { name: string; count: number }>): RoleChange | null {
+	if (!ROLE_MOVES.includes(move.move)) return null;
+	const from = (start.role ?? '').trim();
+	const to = ((move as { role?: string }).role ?? '').trim();
+	if (!from || !to || from === to) return null;
+	const count = uses.get(roleKey(from))?.count ?? 0;
+	if (count < 2) return null;
+	const other = roleKey(to) !== roleKey(from) ? uses.get(roleKey(to)) : undefined;
+	return { from, to, count, merge: other ? other.name : null };
 }

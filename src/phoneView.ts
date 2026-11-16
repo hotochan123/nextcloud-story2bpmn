@@ -63,12 +63,13 @@ export function keyboardInset(innerHeight: number, visual?: { height: number; of
 	return Math.max(0, Math.round(innerHeight - visual.height - visual.offsetTop));
 }
 
-export type SheetAction = ReturnType<typeof lineActions>[number] | 'propose' | 'show';
+export type SheetAction = ReturnType<typeof lineActions>[number] | 'propose' | 'asText' | 'show';
 
 /**
  * Actions of the ⋯ sheet of a line: the same as the line menu on a wide screen (lineActions),
- * "Make a proposal" where a valid version allows it, and "Show in the diagram". No "insert after".
+ * "Make a proposal" where a valid version allows it, "Edit as text" (job 453) and "Show in the
+ * diagram". No "insert after".
  */
-export function sheetActions(move: Move, index: number, inner: boolean, canPropose: boolean, hasException = false): SheetAction[] {
-	return [...lineActions(move, index, inner, hasException), ...(canPropose ? ['propose' as const] : []), 'show'];
+export function sheetActions(move: Move, index: number, inner: boolean, canPropose: boolean, hasException = false, joinable = false, movable = false): SheetAction[] {
+	return [...lineActions(move, index, inner, hasException, joinable, movable), ...(canPropose ? ['propose' as const] : []), 'asText', 'show'];
 }

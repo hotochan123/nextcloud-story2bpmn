@@ -89,7 +89,7 @@ test('AK4 no path leads to the merge any more: the placeholder runs on into it, 
   const out = reopened(moves, 3);
   assert.deepEqual(out, [start, decision('Vollständig?'), task('Buchen'), joins, end('Abgelehnt'), task('Ablegen'), end('Erledigt')]);
   const s = tell(out, 'de');
-  assert.ok(lines(s).includes('1|NOCH OFFEN, DANN ZUSAMMEN.'));
+  assert.ok(lines(s).includes('1|NOCH OFFEN, DANN ZUSAMMENFÜHREN.'));
   const step = s.ir.nodes.find((n) => n.id.startsWith('Offen_'));
   assert.equal(step?.kind, 'step');
   assert.equal(step?.name, 'Noch offen');

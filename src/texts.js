@@ -6,7 +6,7 @@
 // Every t() call with a fixed text, so the translation tools find it.
 // What someone types is never translated; the story itself comes from the core.
 import { n, t } from '@nextcloud/l10n'
-import { branchName } from './core/story.ts'
+import { branchName, countMoves } from './core/story.ts'
 
 export const optionText = () => ({
 	start: t('story2bpmn', 'Tell the trigger'),
@@ -126,6 +126,8 @@ export const kindText = () => {
 		orStart: start,
 		wait: event,
 		decision: { '': t('story2bpmn', 'Something is checked (yes / no)'), first: t('story2bpmn', 'It depends on what comes first') },
+		// The kind of a branch in its edit form (job 451).
+		branch: { '': t('story2bpmn', 'Something is checked (yes / no)'), first: t('story2bpmn', 'It depends on what comes first'), concurrent: t('story2bpmn', 'Several things happen at the same time') },
 		yesKind: event,
 		moreKind: event,
 		noKind: event,
@@ -210,4 +212,15 @@ export const keepText = (z, j, language) => {
 export const dropText = (z, j, language) => {
 	const path = pathName(z, j, language)
 	return t('story2bpmn', 'Delete this path: {path}', { path }, undefined, { escape: false, sanitize: false })
+}
+
+/**
+ * Text of the armed "Delete" of move z (second click). A step with a flow behind it says how many
+ * moves its flow takes along (job 452); `withException`: the step has an exception, which goes too.
+ */
+export const removeText = (z, withException) => {
+	const flow = z?.move === 'task' && Array.isArray(z.subprocess) ? countMoves(z.subprocess) : 0
+	if (flow && withException) return n('story2bpmn', 'Really? The step, its exception and its flow (%n move) go', 'Really? The step, its exception and its flow (%n moves) go', flow)
+	if (flow) return n('story2bpmn', 'Really? The step and its flow (%n move) go', 'Really? The step and its flow (%n moves) go', flow)
+	return withException ? t('story2bpmn', 'Delete the exception too?') : t('story2bpmn', 'Really delete?')
 }

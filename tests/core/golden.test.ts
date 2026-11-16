@@ -22,6 +22,9 @@ async function drawing(moves: Move[], language: Language): Promise<string> {
 // rename: the fixture holds the old output; only its labels were translated with the code).
 // Job 382 changed four states by hand: in legacy-working-file.bpmn steps 10 and 11 an arrow left
 // "Ware auf Lager?" upwards right through the question, which now sits above left of the diamond.
+// Job 444 rewrote the fixture with GOLDEN_WRITE=1 for its new signal words; the diff changes only those words.
+// Job 445 rewrote the SVGs only (GOLDEN_WRITE=1, every other field unchanged): captions keep 12 px from the
+// lane header, so the content of every drawing moved right by 13-18 px and the pool grew by as much.
 const DIR = 'tests/core/fixtures/';
 const GOLDEN = DIR + 'golden.json';
 const FILES = ['legacy-working-file.bpmn', 'legacy-invoice.bpmn'];

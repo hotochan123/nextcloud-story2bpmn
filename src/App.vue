@@ -8,26 +8,31 @@
 			<div ref="workshop" class="story2bpmn-workshop" :class="workshopClass" :style="workshopStyle">
 				<header class="head">
 					<div class="head-inner">
-						<div class="mark">
-							<h1>{{ t('story2bpmn', 'Tell a process') }}</h1>
-							<p>{{ t('story2bpmn', 'Tell a process step by step and get a BPMN diagram. For documentation, not for execution.') }}</p>
-						</div>
+						<!-- Soothing head (job 447): the file name as rubric (on a subprocess level the way back), the process name as title, the state as chips. -->
 						<div class="process">
-							<div class="process-text">
-								<span class="name">{{ name }}</span>
-								<span class="file" :title="file ? file.path : ''">
-									{{ file ? fileDisplay : t('story2bpmn', 'Not saved yet') }}
-									<span v-if="unsavedAll" class="unsaved">
-										<span class="point" aria-hidden="true" />{{ t('story2bpmn', 'Unsaved changes') }}
-									</span>
+							<LevelCrumbs v-if="!phone && view && view.sub"
+								class="head-crumbs"
+								:sub="view.sub"
+								:busy="busy"
+								@up="levelUp"
+								@top="openLevel()" />
+							<p v-else class="file so-rubric" :title="file ? file.path : ''">
+								{{ file ? fileDisplay : t('story2bpmn', 'Not saved yet') }}
+								<span v-if="unsavedAll" class="unsaved">
+									<span class="point" aria-hidden="true" />{{ t('story2bpmn', 'Unsaved changes') }}
 								</span>
-								<span class="hint-saved" role="status">{{ confirmation }}</span>
+							</p>
+							<div class="title-row">
+								<h1 class="name">
+									{{ !phone && view && view.sub ? view.sub.name : name }}
+								</h1>
+								<span v-for="(p, i) in status"
+									:key="i"
+									class="so-chip"
+									:class="p.className">{{ p.text }}</span>
+								<span v-if="reviewWith" class="pill-note">{{ reviewWith }}</span>
 							</div>
-							<span v-for="(p, i) in status"
-								:key="i"
-								class="pill"
-								:class="p.className">{{ p.text }}</span>
-							<span v-if="reviewWith" class="pill-note">{{ reviewWith }}</span>
+							<span class="hint-saved" role="status">{{ confirmation }}</span>
 						</div>
 						<div class="file-buttons werkzeug">
 							<select class="language"
@@ -48,8 +53,7 @@
 								<span>{{ t('story2bpmn', 'Open …') }}</span>
 							</button>
 							<button type="button"
-								class="button phone-keep"
-								:class="isUnsaved ? 'main' : 'quiet'"
+								class="button quiet phone-keep"
 								:disabled="locked || !view?.xml"
 								@click="save">
 								<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /><path d="M7 3v5h8V3M7 21v-7h10v7" /></svg>
@@ -72,7 +76,8 @@
 								:aria-pressed="sidebarOpen ? 'true' : 'false'"
 								@click="toggleSidebar">
 								<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z" /></svg>
-								<span>{{ proposals.length ? t('story2bpmn', 'Proposals ({count})', { count: proposals.length }) : t('story2bpmn', 'Proposals') }}</span>
+								<span>{{ t('story2bpmn', 'Proposals') }}</span>
+								<span v-if="proposals.length" class="so-chip so-chip--count">{{ proposals.length }}</span>
 							</button>
 							<button v-if="phone"
 								type="button"
@@ -111,30 +116,11 @@
 						</button>
 					</div>
 				</div>
-				<nav v-if="view && view.sub"
-					class="crumbs"
-					:class="{ deep: !!view.sub.within }"
-					:aria-label="t('story2bpmn', 'Breadcrumbs')">
-					<button type="button"
-						class="button quiet icon"
-						:disabled="busy"
-						:aria-label="t('story2bpmn', 'Back to “{name}”', { name: view.sub.process }, undefined, { escape: false, sanitize: false })"
-						@click="levelUp">
-						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>
-					</button>
-					<!-- What can come at any time inside a subprocess: main flow › subprocess › its flow (job 397). -->
-					<template v-if="view.sub.within">
-						<a href="#" @click.prevent="openLevel()">{{ view.sub.main }}</a>
-						<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-						<a href="#" @click.prevent="levelUp">{{ view.sub.within }}</a>
-					</template>
-					<a v-else href="#" @click.prevent="openLevel()">{{ view.sub.process }}</a>
-					<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
-					<span class="here" aria-current="page">
-						<span class="o o-task">{{ view.sub.name }}<svg class="plus" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" /><path d="M5 2.5v5M2.5 5h5" /></svg></span>
-						{{ view.sub.within ? t('story2bpmn', '· At any time') : t('story2bpmn', '· Subprocess') }}<template v-if="view.sub.lane">, {{ t('story2bpmn', 'lane {lane}', { lane: view.sub.lane }, undefined, { escape: false, sanitize: false }) }}</template>
-					</span>
-				</nav>
+				<LevelCrumbs v-if="phone && view && view.sub"
+					:sub="view.sub"
+					:busy="busy"
+					@up="levelUp"
+					@top="openLevel()" />
 				<main v-if="view"
 					ref="workbench"
 					class="workbench"
@@ -148,6 +134,7 @@
 						:language="language"
 						:busy="busy || publishing"
 						:change="changeLevel"
+						:change-all="change"
 						:back="back"
 						:can-back="canBack"
 						:chosen-line="chosen"
@@ -172,6 +159,7 @@
 						@compare="compare = $event"
 						@withdraw="withdrawNow"
 						@open="openLevel"
+						@as-text="asTextAt"
 						@back="levelUp"
 						@choose="chooseInStory" />
 					<DiagramCard :key="cardKey"
@@ -230,13 +218,9 @@
 						:busy="locked || publishing"
 						:can-undo="canBack"
 						:can-tell="!view.done"
-						:has-diagram="!!view.svg"
-						:follow="follow"
 						@pane="setPane"
 						@undo="$refs.story?.undo()"
-						@next="$refs.story?.openSheet()"
-						@fit="$refs.diagram?.task('fit')"
-						@follow="$refs.diagram?.toggleFollow()" />
+						@next="$refs.story?.openSheet()" />
 					<BottomSheet v-if="headMenu"
 						class="head-sheet"
 						:title="t('story2bpmn', 'More actions')"
@@ -352,6 +336,7 @@
 				:file-path="file ? file.path : ''"
 				:approval="approval"
 				:counts="counts"
+				:rows="askRows"
 				:language="language"
 				@send="ask"
 				@close="dialog = null" />
@@ -387,6 +372,9 @@
 			:phone="phone"
 			:approval="trusted"
 			:proposals="proposals"
+			:comments="fileComments"
+			:process-name="name"
+			:changed-lines="diff.filter((d) => d.kind !== 'same').length"
 			:can-decide="rights.decide"
 			:busy="locked"
 			:unsaved="unsavedAll"
@@ -412,12 +400,14 @@ import ApprovalSidebar from './components/ApprovalSidebar.vue'
 import DiagramCard from './components/DiagramCard.vue'
 import PhoneBar from './components/PhoneBar.vue'
 import BottomSheet from './components/BottomSheet.vue'
+import LevelCrumbs from './components/LevelCrumbs.vue'
+import { headChips } from './headChips.ts'
 import { outputs, outputName, fileSuggestion, diagramLanguage, loadStory, unsaved, workbench, carry, saveThenPublish, copyState, fileXml, lineParts } from './workbench.ts'
 import { afterMove, isRail, keyboardInset, keyboardOpen, phoneAfterResize, phoneStart, showPane } from './phoneView.ts'
 import {
 	pills, can, isOwner, changeWithdraws, isValidState, changedSinceValid, requested, approved, withdrawn, decided, runSteps, versionOf,
 	reviewLabel, validLabel, tagName, askComment, approvedComment, withdrawnComment, decisionComment, proposalText,
-	openProposals, acceptProposal, checkProposal, compareLines, diffCounts, validLines, approvalAction, overwriteApproval,
+	openProposals, acceptProposal, checkProposal, compareLines, diffCounts, diffRows, validLines, approvalAction, overwriteApproval,
 	validIndexOf, currentIndexOf, quoteOf, ownerCompares, currentLines, confirmApproval, approveSteps,
 	approvalMention, withdrawMention,
 } from './approval.ts'
@@ -435,7 +425,7 @@ let messageNum = 0
 
 export default {
 	name: 'App',
-	components: { NcAppContent, NcContent, NcDialog, NcTextField, StoryCard, DiagramCard, ApprovalDialog, ApprovalSidebar, PhoneBar, BottomSheet },
+	components: { NcAppContent, NcContent, NcDialog, NcTextField, StoryCard, DiagramCard, ApprovalDialog, ApprovalSidebar, PhoneBar, BottomSheet, LevelCrumbs },
 	setup() {
 		// The core calculates in the browser; saved as a working file in the account's Files.
 		return { view: shallowRef(null) }
@@ -587,14 +577,12 @@ export default {
 		status() {
 			const v = this.view
 			// The whole story counts, also on a subprocess level; an untold subprocess is an open point.
-			return pills({ approval: this.trusted, done: !!v?.complete, issues: (v?.issues.length ?? 0) + (v?.untold ?? 0), moves: v?.moves ?? [], language: this.language, proposals: this.proposals.length }).map((p) => {
-				if (p.kind === 'draft') return { text: t('story2bpmn', 'Draft'), className: '' }
-				if (p.kind === 'done') return { text: t('story2bpmn', 'Fully told'), className: 'done' }
-				if (p.kind === 'open') return { text: n('story2bpmn', '%n open point', '%n open points', p.count), className: 'open' }
-				if (p.kind === 'review') return { text: t('story2bpmn', 'For approval'), className: 'review' }
-				if (p.kind === 'valid') return { text: t('story2bpmn', 'Valid · version {number}', { number: p.number }), className: 'valid' }
-				if (p.kind === 'changed') return { text: t('story2bpmn', 'Changed since v{number}', { number: p.number }), className: 'open' }
-				return { text: n('story2bpmn', '%n proposal', '%n proposals', p.count), className: 'proposals' }
+			return headChips(pills({ approval: this.trusted, done: !!v?.complete, issues: (v?.issues.length ?? 0) + (v?.untold ?? 0), moves: v?.moves ?? [], language: this.language, proposals: this.proposals.length })).map((c) => {
+				if (c.word === 'draft') return { text: t('story2bpmn', 'Draft'), className: c.className }
+				if (c.word === 'done') return { text: t('story2bpmn', 'Fully told'), className: c.className }
+				if (c.word === 'open') return { text: n('story2bpmn', '%n open point', '%n open points', c.count), className: c.className }
+				if (c.word === 'valid') return { text: t('story2bpmn', 'Valid version {number}', { number: c.number }), className: c.className }
+				return { text: t('story2bpmn', 'For approval'), className: c.className }
 			})
 		},
 		reviewWith() {
@@ -628,6 +616,10 @@ export default {
 		diff() {
 			if (!this.trusted?.valid || !this.view) return []
 			return compareLines(validLines(this.trusted), currentLines(this.view))
+		},
+		/** The comparison of the dialog "Ask for approval" (job 450): rows numbered like the story, null without a valid version. */
+		askRows() {
+			return this.trusted?.valid && this.view ? diffRows(this.diff, this.view.storyText) : null
 		},
 		counts() {
 			return this.trusted?.valid ? { number: this.trusted.valid.number, ...diffCounts(this.diff) } : null
@@ -812,6 +804,14 @@ export default {
 		/** A change on the level shown (the story card): on a subprocess level only its flow changes. */
 		changeLevel(added) {
 			return this.change(added, true)
+		},
+		/** "Edit as text" of a line on a subprocess level: the editor holds the whole story, so the main level first, caret on `line` (job 453). */
+		async asTextAt(line) {
+			if (this.textDraft !== null) return this.textQuery(() => this.asTextAt(line))
+			await this.showLevel()
+			if (this.view?.sub) return
+			await this.$nextTick()
+			this.$refs.story?.openText(null, line)
 		},
 		/** One level up: from the flow of what can come at any time in a subprocess to that subprocess, else to the main level. */
 		levelUp() {
@@ -1469,7 +1469,8 @@ export default {
 			const at = validIndexOf(a, proposal)
 			const quote = quoteOf(proposal.label, at === null ? '' : validLines(a)[at])
 			if (!(await this.writeApproval(decided(this.approval, proposal.id)))) return
-			comment(this.file.id, decisionComment(kind, proposal.line, quote, a.valid?.language ?? this.language)).catch(() => {})
+			// Read the comments once the decision comment is there: the sidebar shows the decision from it (job 450).
+			await comment(this.file.id, decisionComment(kind, proposal.line, quote, a.valid?.language ?? this.language)).catch(() => {})
 			this.loadComments()
 		},
 		// Whoever leaves the page with unsaved changes is asked.

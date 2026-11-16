@@ -33,7 +33,7 @@ test('390 AK1 the step carries forEach and the story text names it, DE and EN', 
   const { g, e } = await play(story());
   assert.deepEqual(g.errors, []);
   assert.deepEqual(step(e.ir, 'Position prüfen').forEach, { item: 'Rechnungsposition' });
-  assert.ok(lines(g).includes('[@Buchhaltung] soll [Position prüfen], FÜR JEDE [Rechnungsposition], NACHEINANDER.'));
+  assert.ok(lines(g).includes('[@Buchhaltung] soll [Position prüfen], JE [Rechnungsposition], NACHEINANDER.'));
   const p = tell(story('parallel'), 'en');
   assert.deepEqual(step(p.ir, 'Position prüfen').forEach, { item: 'Rechnungsposition', parallel: true });
   assert.ok(lines(p).includes('[@Buchhaltung] shall [Position prüfen], FOR EACH [Rechnungsposition], IN PARALLEL.'));
@@ -47,7 +47,7 @@ test('390 AK1 with all extras, with a subprocess and inside a subprocess', async
   const moves = story('parallel', { system: 'SAP', documentName: 'Rechnung', deadline: '3 Tage', subprocess: inner });
   const { g, e } = await play(moves);
   assert.deepEqual(g.errors, []);
-  assert.ok(lines(g).includes('[@Buchhaltung] soll [Position prüfen] in [#SAP] mit [+Rechnung], Frist [!3 Tage], FÜR JEDE [Rechnungsposition], GLEICHZEITIG, MIT TEILABLAUF.'));
+  assert.ok(lines(g).includes('[@Buchhaltung] soll [Position prüfen] in [#SAP] mit [+Rechnung], Frist [!3 Tage], JE [Rechnungsposition], GLEICHZEITIG, MIT TEILABLAUF.'));
   const s = step(e.ir, 'Position prüfen');
   assert.ok(s.subprocess);
   assert.deepEqual(s.forEach, { item: 'Rechnungsposition', parallel: true });

@@ -55,7 +55,7 @@ test('AK2 "what comes first" and "in parallel" with three branches get a placeho
 test('AK3 a decision inside a path that merges is closed before that merge; the outer branch stays as it was', () => {
   const out = ok(insertBefore(CHECK, 3, decision('Eilig?'), 'de'));
   const s = tell(out, 'de');
-  assert.ok(lines(s).includes('2|NOCH OFFEN, DANN ZUSAMMEN.'));
+  assert.ok(lines(s).includes('2|NOCH OFFEN, DANN ZUSAMMENFÜHREN.'));
   // The old merge still closes the outer branch, and what comes after it stands as before.
   const old = tell(CHECK, 'de');
   assert.deepEqual(lines(s).slice(-2), lines(old).slice(-2));
@@ -73,7 +73,7 @@ test('AK3 "in parallel" before a path that ends with "continue at": closed befor
   const goTo = out.at(-1) as { move: string; target: string };
   assert.equal(goTo.move, 'goTo');
   assert.equal(s.ir.nodes.find((n) => n.id === goTo.target)?.name, 'Prüfen');
-  assert.ok(lines(s).includes('1|NOCH OFFEN, DANN ZUSAMMEN.'));
+  assert.ok(lines(s).includes('1|NOCH OFFEN, DANN ZUSAMMENFÜHREN.'));
   assert.equal(lines(s).at(-1), '0|WEITER BEI [Prüfen].');
 });
 
@@ -112,7 +112,7 @@ test('AK1 a task, a wait and a signal go in as before; before an exception line 
 test('AK5 an exception on a step: its path still open, the normal path goes on', () => {
   const out = ok(addException(PLAIN, 1, exception, 'de'));
   const s = tell(out, 'de');
-  assert.deepEqual(lines(s), ['0|ES BEGINNT: [Rechnung geht ein] bei [@Buchhaltung].', '0|[@Buchhaltung] soll [Prüfen].', '0|FALLS [Fehler]:', '1|NOCH OFFEN.', '0|[@Buchhaltung] soll [Buchen].', '0|ENDE: [Gebucht].']);
+  assert.deepEqual(lines(s), ['0|ES BEGINNT: [Rechnung geht ein] bei [@Buchhaltung].', '0|[@Buchhaltung] soll [Prüfen].', '0|AUSNAHME [Fehler]:', '1|NOCH OFFEN.', '0|[@Buchhaltung] soll [Buchen].', '0|ENDE: [Gebucht].']);
   assert.equal(s.done, true);
   readsBack(out);
   // A step with an exception gets no second one.
@@ -133,7 +133,7 @@ test('Risk: an exception where the step keeps running stays a path of its own th
   const out = ok(addException(CHECK, 3, { move: 'exceptionPath', text: 'Frist', subtype: 'deadline', keepsRunning: 'yes' }, 'de'));
   const s = tell(out, 'de');
   assert.ok(lines(s).includes('2|NOCH OFFEN.'));
-  assert.ok(!lines(s).includes('2|NOCH OFFEN, DANN ZUSAMMEN.'));
+  assert.ok(!lines(s).includes('2|NOCH OFFEN, DANN ZUSAMMENFÜHREN.'));
 });
 
 test('AK6 a further trigger goes right after the triggers, a second plain one is refused', () => {

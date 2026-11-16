@@ -18,26 +18,141 @@ export const MAX_LINE = 500;
 /** Most non-empty lines of a story text that is read back. */
 export const MAX_LINES = 1000;
 
-export function read(text: string, language: Language = 'de', previous?: Move[]): { moves: Move[]; errors: string[]; line?: number } {
+/**
+ * Signal words of the story text before job 444, rewritten to the current ones (only at the start of a line or
+ * as the whole line, never inside brackets): `FALLS` → `AUSNAHME`, `ZUSAMMEN` → `ZUSAMMENFÜHREN`,
+ * `WEITER AUF DEM` → `WIEDER AUF DEM`, `, FÜR JEDE [` → `, JE [`; English `IN CASE OF` → `EXCEPTION`; the name of an
+ * exception path in a path heading: `Falls „…“` → `Ausnahme „…“`, `In case of “…”` → `Exception “…”`.
+ */
+export function newWords(line: string, language: Language): string {
+  const body = line.trim();
+  const lead = line.slice(0, line.length - line.trimStart().length);
+  const trail = line.slice(line.trimEnd().length);
+  let out = body;
+  if (language === 'en') out = out.replace(/^IN CASE OF(?= )/u, 'EXCEPTION').replace(/^BACK ON THE PATH In case of “/u, 'BACK ON THE PATH Exception “');
+  else {
+    out = out
+      .replace(/^FALLS(?= )/u, 'AUSNAHME')
+      .replace(/^(NOCH OFFEN, DANN )?ZUSAMMEN(\.?)$/u, '$1ZUSAMMENFÜHREN$2')
+      .replace(/^WEITER AUF DEM(?= )/u, 'WIEDER AUF DEM')
+      .replace(/^WIEDER AUF DEM WEG Falls „/u, 'WIEDER AUF DEM WEG Ausnahme „');
+    // Only a task line: the item comes right after a closing bracket, so the words are outside brackets.
+    if (out.startsWith('[@')) out = out.replace(/\], FÜR JEDE \[/u, '], JE [');
+  }
+  return out === body ? line : lead + out + trail;
+}
+
+/** Heading of a subprocess section and of something that can come at any time ("JEDERZEIT mit Nachricht: [Kunde storniert]:"). */
+function sectionHeads(language: Language) {
   const t = (de: string, en: string) => (language === 'en' ? en : de);
-  const lines = text.split(/\r?\n/);
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const KINDS: [string, EventKind][] = [[t(' mit Nachricht', ' with a message'), 'message'], [t(' zum Zeitpunkt', ' at a point in time'), 'time'], [t(' sobald', ' once'), 'condition'], [t(' mit Signal', ' with a signal'), 'signal']];
+  const section = new RegExp(`^${t('TEILABLAUF', 'SUBPROCESS')} \\[([^\\]]+)\\]:$`, 'u');
+  const anytime = new RegExp(`^${t('JEDERZEIT', 'AT ANY TIME')}(${KINDS.map(([w]) => esc(w)).join('|')}): \\[([^\\]]+)\\](${esc(t(', Ablauf läuft weiter', ', flow continues'))})?:$`, 'u');
+  return { section, anytime, KINDS };
+}
+
+/** A path heading (trimmed line, a typed hyphen already the dash): "→ ja:", "SONST → nein:", a strand, "WIEDER AUF DEM …:". */
+function isPathHead(line: string, language: Language, strands: string[]): boolean {
+  const t = (de: string, en: string) => (language === 'en' ? en : de);
+  return /^→ .+:$/u.test(line) || new RegExp(`^${t('SONST', 'ELSE')} → .+:$`, 'u').test(line) || strands.includes(line) || line.startsWith(t('WIEDER AUF DEM', 'BACK ON THE') + ' ');
+}
+
+/**
+ * The number the story shows left of each line of a story text (move + 1 on its level), from the text alone
+ * (job 449): none for empty lines, path headings, the heading of a subprocess section and the plain
+ * `ES BEGINNT.` that opens a section. Each section counts from 1 again; the heading of something that can come
+ * at any time is a move of its level. Without "switch to" moves (a move without a line of its own) it equals
+ * the numbers read() finds by replaying the text.
+ */
+export function lineNumbers(text: string, language: Language = 'de'): (number | null)[] {
+  const t = (de: string, en: string) => (language === 'en' ? en : de);
+  const { section, anytime } = sectionHeads(language);
+  const strands = Array.from({ length: MAX_PATHS }, (_, j) => branchHead(j, language));
+  const plain = new RegExp(`^${t('ES BEGINNT', 'IT STARTS')}\\.?$`, 'u');
+  let main = 0;
+  let sub = 0;
+  let inner = 0;
+  let within = false;
+  let mode: 'main' | 'sub' | 'any' = 'main';
+  let fresh = false;
+  return text.split(/\r?\n/).map((raw) => {
+    const trimmed = newWords(raw, language).trim();
+    const line = trimmed.startsWith('- ') && strands.includes(`–${trimmed.slice(1)}`) ? `–${trimmed.slice(1)}` : trimmed;
+    if (!line) return null;
+    if (section.test(line)) {
+      within = true;
+      sub = 0;
+      mode = 'sub';
+      fresh = true;
+      return null;
+    }
+    if (anytime.test(line)) {
+      const n = within ? ++sub : ++main;
+      inner = 0;
+      mode = 'any';
+      fresh = true;
+      return n;
+    }
+    const opens = fresh;
+    fresh = false;
+    if (opens && plain.test(line)) return null;
+    if (isPathHead(line, language, strands)) return null;
+    return mode === 'main' ? ++main : mode === 'sub' ? ++sub : ++inner;
+  });
+}
+
+export type TextRead = { moves: Move[]; errors: string[]; line?: number; numbers: (number | null)[] };
+
+export function read(text: string, language: Language = 'de', previous?: Move[]): TextRead {
+  const t = (de: string, en: string) => (language === 'en' ? en : de);
+  const given = text.split(/\r?\n/);
+  // The number of each line as the story shows it (job 449): set while replaying, the rest from the text alone.
+  const nums: (number | null)[] = given.map(() => null);
+  const { section, anytime, KINDS } = sectionHeads(language);
+  const isSection = (l: string) => section.test(l.trim()) || anytime.test(l.trim());
+  /** The result with the numbers: up to the line of an error as read, after it counted on from there. */
+  const done = (r: { moves: Move[]; errors: string[]; line?: number }): TextRead => {
+    if (!r.errors.length) return { ...r, numbers: nums };
+    const est = lineNumbers(text, language);
+    if (r.line === undefined) return { ...r, numbers: est };
+    const e = r.line - 1;
+    // The last number of the level up to the error, as read and as counted from the text.
+    let base = 0;
+    let estBase = 0;
+    for (let k = e; k >= 0; k--) {
+      if (nums[k] !== null) {
+        base = nums[k]!;
+        estBase = est[k] ?? 0;
+        break;
+      }
+      if (isSection(given[k])) break;
+    }
+    let shifted = true;
+    for (let k = e + 1; k < given.length; k++) {
+      if (isSection(given[k])) shifted = false;
+      nums[k] = est[k] === null ? null : shifted ? base + est[k]! - estBase : est[k];
+    }
+    return { ...r, numbers: nums };
+  };
+  /** "Zeile n: …" with the number of the line in the story; a line without one (a heading) gets the message alone. */
+  const at = (num: number | null | undefined, what: string) => (num == null ? what : t(`Zeile ${num}: ${what}`, `Line ${num}: ${what}`));
   // Limits before any pattern runs (security audit 2026-11): a long line or a huge text must not stall the page.
-  if (lines.filter((l) => l.trim()).length > MAX_LINES)
-    return { moves: [], errors: [t(`Der Text ist zu lang (höchstens ${MAX_LINES} Zeilen)`, `The text is too long (${MAX_LINES} lines at most)`)] };
-  const long = lines.findIndex((l) => l.trim().length > MAX_LINE);
-  if (long >= 0)
-    return { moves: [], errors: [t(`Zeile ${long + 1}: Die Zeile ist zu lang (höchstens ${MAX_LINE} Zeichen)`, `Line ${long + 1}: The line is too long (${MAX_LINE} characters at most)`)], line: long + 1 };
+  if (given.filter((l) => l.trim()).length > MAX_LINES)
+    return { moves: [], errors: [t(`Der Text ist zu lang (höchstens ${MAX_LINES} Zeilen)`, `The text is too long (${MAX_LINES} lines at most)`)], numbers: nums };
+  const long = given.findIndex((l) => l.trim().length > MAX_LINE);
+  if (long >= 0) {
+    const est = lineNumbers(text, language);
+    return { moves: [], errors: [at(est[long], t(`Die Zeile ist zu lang (höchstens ${MAX_LINE} Zeichen)`, `The line is too long (${MAX_LINE} characters at most)`))], line: long + 1, numbers: est };
+  }
+  // The signal words before job 444 still read (same lines, same line numbers): a story typed or proposed with them.
+  const lines = given.map((l) => newWords(l, language));
   // After the main flow comes one section per thing that can come at any time, then one per subprocess,
   // headed by its signal word and the task name; a JEDERZEIT section after a subprocess section belongs to
   // that subprocess (what can come at any time while it runs, job 397).
-  const section = new RegExp(`^${t('TEILABLAUF', 'SUBPROCESS')} \\[([^\\]]+)\\]:$`, 'u');
-  // Heading of something that can come at any time: "JEDERZEIT mit Nachricht: [Kunde storniert]:".
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const KINDS: [string, EventKind][] = [[t(' mit Nachricht', ' with a message'), 'message'], [t(' zum Zeitpunkt', ' at a point in time'), 'time'], [t(' sobald', ' once'), 'condition'], [t(' mit Signal', ' with a signal'), 'signal']];
-  const anytime = new RegExp(`^${t('JEDERZEIT', 'AT ANY TIME')}(${KINDS.map(([w]) => esc(w)).join('|')}): \\[([^\\]]+)\\](${esc(t(', Ablauf läuft weiter', ', flow continues'))})?:$`, 'u');
-  const starts = lines.flatMap((l, i) => (section.test(l.trim()) || anytime.test(l.trim()) ? [i] : []));
-  const main = readLevel(lines.slice(0, starts[0] ?? lines.length), 0, language, {}, hintOf(previous, language));
-  if (main.errors.length) return main;
+  const starts = lines.flatMap((l, i) => (isSection(l) ? [i] : []));
+  const main = readLevel(lines.slice(0, starts[0] ?? lines.length), 0, language, {}, hintOf(previous, language), nums);
+  if (main.errors.length) return done(main);
   const { moves } = main;
   const taken = new Set<number>();
   /** The task move of the last subprocess section; its moves get what comes at any time after it. */
@@ -51,40 +166,42 @@ export function read(text: string, language: Language = 'de', previous?: Move[])
     seen.set(key, k + 1);
     return among?.filter(pick)[k];
   };
-  for (const [j, at] of starts.entries()) {
-    const num = at + 1;
-    const body = lines.slice(at + 1, starts[j + 1] ?? lines.length);
+  for (const [j, start] of starts.entries()) {
+    const num = start + 1;
+    const body = lines.slice(start + 1, starts[j + 1] ?? lines.length);
     // Its first line is `ES BEGINNT.`; it may be missing.
     const first = body.findIndex((l) => l.trim());
     const plain = first >= 0 && new RegExp(`^${t('ES BEGINNT', 'IT STARTS')}\\.?$`, 'u').test(body[first].trim());
     const from = plain ? first + 1 : 0;
-    const any = lines[at].trim().match(anytime);
+    const any = lines[start].trim().match(anytime);
     if (any) {
       const subtype = KINDS.find(([w]) => w === any[1])![1];
       const keepsRunning = any[3] ? 'yes' as const : '' as const;
       const inner = { inner: { name: any[2], trigger: { subtype, keepsRunning: !!any[3] } } };
+      // The heading is a move of its level: the main flow, or the subprocess of the section before.
+      nums[start] = (within === undefined ? moves.length : ((moves[within] as Extract<Move, { move: 'task' }>).subprocess ?? []).length) + 1;
       const was = before(within === undefined ? previous : previousWithin, `${within ?? ''}|any|${any[2]}`, (z) => z.move === 'anytime' && z.text === any[2]);
-      const r = readLevel(body.slice(from), at + 1 + from, language, inner, hintOf((was as { subprocess?: Move[] } | undefined)?.subprocess, language, inner));
-      if (r.errors.length) return { moves, errors: r.errors, ...(r.line !== undefined && { line: r.line }) };
+      const r = readLevel(body.slice(from), start + 1 + from, language, inner, hintOf((was as { subprocess?: Move[] } | undefined)?.subprocess, language, inner), nums);
+      if (r.errors.length) return done({ moves, errors: r.errors, ...(r.line !== undefined && { line: r.line }) });
       const z: Move = { move: 'anytime', text: any[2], subtype, keepsRunning, subprocess: r.moves };
       if (within === undefined) moves.push(z);
       else (moves[within] as Extract<Move, { move: 'task' }>).subprocess!.push(z);
       const e = tell(moves, language).errors;
-      if (e.length) return { moves, errors: [t(`Zeile ${num}: ${e[0]}`, `Line ${num}: ${e[0]}`)], line: num };
+      if (e.length) return done({ moves, errors: [at(nums[start], e[0])], line: num });
       continue;
     }
-    const name = lines[at].trim().match(section)![1];
+    const name = lines[start].trim().match(section)![1];
     // The first task of that name told WITH SUBPROCESS whose section has not come yet.
     const i = moves.findIndex((z, n) => z.move === 'task' && z.subprocess !== undefined && z.text === name && !taken.has(n));
-    if (i < 0) return { moves, errors: [t(`Zeile ${num}: Kein Schritt „${name}“ mit TEILABLAUF, zu dem dieser Abschnitt gehört`, `Line ${num}: No step “${name}” WITH SUBPROCESS that this section belongs to`)], line: num };
+    if (i < 0) return done({ moves, errors: [t(`Kein Schritt „${name}“ mit TEILABLAUF, zu dem dieser Abschnitt gehört`, `No step “${name}” WITH SUBPROCESS that this section belongs to`)], line: num });
     taken.add(i);
     within = i;
     previousWithin = (before(previous, `sub|${name}`, (z) => z.move === 'task' && z.subprocess !== undefined && z.text === name) as { subprocess?: Move[] } | undefined)?.subprocess;
-    const r = readLevel(body.slice(from), at + 1 + from, language, { inner: { name } }, hintOf(previousWithin, language, { inner: { name } }));
-    if (r.errors.length) return { moves, errors: r.errors, ...(r.line !== undefined && { line: r.line }) };
+    const r = readLevel(body.slice(from), start + 1 + from, language, { inner: { name } }, hintOf(previousWithin, language, { inner: { name } }), nums);
+    if (r.errors.length) return done({ moves, errors: r.errors, ...(r.line !== undefined && { line: r.line }) });
     (moves[i] as Extract<Move, { move: 'task' }>).subprocess = r.moves;
   }
-  return { moves, errors: [] };
+  return done({ moves, errors: [] });
 }
 
 /** Nodes "continue at" can lead to (as targets() in story.ts) named `name`, in the order of the IR. */
@@ -112,7 +229,7 @@ function hintOf(moves: Move[] | undefined, language: Language, opts: TellOptions
 
 /** One level of the story text: the main flow, or the lines of one subprocess (`opts.inner`). `offset`: lines before it.
  *  `hint`: the same level before the edit (hintOf). */
-function readLevel(lines: string[], offset: number, language: Language, opts: TellOptions = {}, hint?: Hint): { moves: Move[]; errors: string[]; line?: number } {
+function readLevel(lines: string[], offset: number, language: Language, opts: TellOptions = {}, hint?: Hint, nums: (number | null)[] = []): { moves: Move[]; errors: string[]; line?: number } {
   const t = (de: string, en: string) => (language === 'en' ? en : de);
   const moves: Move[] = [];
   const room = (i: number, slot: 'yes' | 'no' | number) => `§${i}.${slot}§`;
@@ -123,14 +240,14 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
     start: t('ES BEGINNT', 'IT STARTS'), orStart: t('ODER ES BEGINNT', 'OR IT STARTS'), at: t('bei', 'at'), shall: t('soll', 'shall'), withWord: t('mit', 'with'), deadline: t('Frist', 'deadline'),
     waitFor: t('WARTEN AUF', 'WAIT FOR'), waitUntil: t('WARTEN BIS', 'WAIT UNTIL'), decision: t('WENN', 'IF'),
     first: t('WAS ZUERST PASSIERT', 'WHAT COMES FIRST'), concurrent: t('GLEICHZEITIG', 'IN PARALLEL'),
-    ifCase: t('FALLS', 'IN CASE OF'), message: t('NACHRICHT', 'MESSAGE'), runs: t(', Schritt läuft weiter', ', step continues'),
-    merge: t('ZUSAMMEN', 'MERGE'), end: t('ENDE', 'END'), continueAt: t('WEITER BEI', 'CONTINUE AT'), openPath: t('NOCH OFFEN', 'STILL OPEN'), openJoins: t('NOCH OFFEN, DANN ZUSAMMEN', 'STILL OPEN, THEN MERGE'),
-    otherwise: t('SONST', 'ELSE'), once: t('SOBALD', 'ONCE'), continueOn: t('WEITER AUF DEM', 'BACK ON THE'),
+    ifCase: t('AUSNAHME', 'EXCEPTION'), message: t('NACHRICHT', 'MESSAGE'), runs: t(', Schritt läuft weiter', ', step continues'),
+    merge: t('ZUSAMMENFÜHREN', 'MERGE'), end: t('ENDE', 'END'), continueAt: t('WEITER BEI', 'CONTINUE AT'), openPath: t('NOCH OFFEN', 'STILL OPEN'), openJoins: t('NOCH OFFEN, DANN ZUSAMMENFÜHREN', 'STILL OPEN, THEN MERGE'),
+    otherwise: t('SONST', 'ELSE'), once: t('SOBALD', 'ONCE'), continueOn: t('WIEDER AUF DEM', 'BACK ON THE'),
     withMessage: t(' mit Nachricht', ' with a message'), pointInTime: t(' zum Zeitpunkt', ' at a point in time'),
     onceSmall: t(' sobald', ' once'), cancel: t(', alles abbrechen', ', stop everything'),
     withSignal: t(' mit Signal', ' with a signal'), waitSignal: t('WARTEN AUF SIGNAL', 'WAIT FOR SIGNAL'), sendSignal: t('SIGNAL SENDEN', 'SEND SIGNAL'),
     withSub: t(', MIT TEILABLAUF', ', WITH SUBPROCESS'),
-    forEach: t('FÜR JEDE', 'FOR EACH'), inSequence: t('NACHEINANDER', 'IN SEQUENCE'), inParallel: t('GLEICHZEITIG', 'IN PARALLEL')
+    forEach: t('JE', 'FOR EACH'), inSequence: t('NACHEINANDER', 'IN SEQUENCE'), inParallel: t('GLEICHZEITIG', 'IN PARALLEL')
   };
   const rx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const R = (...parts: string[]) => new RegExp(`^${parts.join('')}$`, 'u');
@@ -170,9 +287,13 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
   ];
 
   // line: for the marker in the editor, without splitting up the text.
-  const errors = (n: number, what: string) => {
+  // The message names the number of the line in the story (job 449): the move it would become; a path
+  // heading has none, its message stands alone.
+  const errors = (n: number, what: string, heading = false) => {
     const num = offset + n;
-    return ({ moves, errors: [t(`Zeile ${num}: ${what}`, `Line ${num}: ${what}`)], line: num });
+    const shown = heading ? null : moves.length + 1;
+    nums[num - 1] = shown;
+    return ({ moves, errors: [shown === null ? what : t(`Zeile ${shown}: ${what}`, `Line ${shown}: ${what}`)], line: num });
   };
 
   /** A hyphen typed instead of the dash of a branch heading. */
@@ -210,22 +331,27 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
     return n > 0 ? { more: Array.from({ length: n }, (_, j) => room(moves.length, j)) } : {};
   };
 
+  /** What kind of path heading a (trimmed) line is; undefined for a content line. */
+  const headOf = (line: string) =>
+    line.match(R(`${rx(W.otherwise)} → (.+):`)) ? 'otherwise'
+    : line.match(R(`→ (?:${rx(W.once)} |SIGNAL )?\\[.+\\]:`)) ? 'first'
+    : line.match(R('→ (.+):')) ? 'yes'
+    : strands.includes(line) || line.startsWith(W.continueOn + ' ') ? 'fixed'
+    : undefined;
+
   /** How many CONTINUE AT [name] were read so far, per name. */
   const continued = new Map<string, number>();
+  /** Indentation of the EXCEPTION line that opened each exception path, by the name of the path. */
+  const exceptionAt = new Map<string, number>();
   for (const [i, raw] of lines.entries()) {
     at = i;
     const line = dash(raw.trim());
     if (!line) continue;
     const num = i + 1;
-    const state = tell(moves, language, opts);
+    let state = tell(moves, language, opts);
 
     // Path heading?
-    const head =
-      line.match(R(`${rx(W.otherwise)} → (.+):`)) ? 'otherwise'
-      : line.match(R(`→ (?:${rx(W.once)} |SIGNAL )?\\[.+\\]:`)) ? 'first'
-      : line.match(R('→ (.+):')) ? 'yes'
-      : strands.includes(line) || line.startsWith(W.continueOn + ' ') ? 'fixed'
-      : undefined;
+    const head = headOf(line);
     if (head) {
       const heads = state.heads ?? [];
       // First exactly the same heading, then a path whose label is still missing.
@@ -234,7 +360,7 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
         to = heads.findIndex((k) => k !== undefined && SLOT.test(k) && (head === 'otherwise') === k.startsWith(W.otherwise) && (head !== 'first' || k.includes('[')));
       // Continuation of a path whose name has changed in the meantime: the next one begun.
       if (to < 0 && line.startsWith(W.continueOn + ' ')) to = heads.findIndex((k) => k?.startsWith(W.continueOn + ' '));
-      if (to < 0) return errors(num, t(`„${line}“ – diesen Weg gibt es hier nicht`, `“${line}” – there is no such path here`));
+      if (to < 0) return errors(num, t(`„${line}“ – diesen Weg gibt es hier nicht`, `“${line}” – there is no such path here`), true);
       const p = heads[to]?.match(SLOT);
       if (p) {
         const z = moves[Number(p[1])] as Extract<Move, { move: 'decision' }>;
@@ -255,6 +381,19 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
     }
 
     // Content
+    // The normal path told before the rest of an exception path (job 446): tell writes the normal path without a
+    // heading at the depth of the EXCEPTION line and the exception path later under "BACK ON THE PATH Exception …".
+    // So a content line no deeper than that line, while that heading is still to come, is on the normal path.
+    const opened = state.path === undefined ? undefined : exceptionAt.get(state.path);
+    if (opened !== undefined && indent(raw) <= opened && lines.slice(i + 1).some((l) => l.trim() === `${W.continueOn} ${t('WEG', 'PATH')} ${state.path}:`)) {
+      moves.push({ move: 'switchTo', to: 1 });
+      const switched = tell(moves, language, opts);
+      if (switched.errors.length) {
+        moves.pop();
+        return errors(num, switched.errors[0]);
+      }
+      state = switched;
+    }
     const hits = fileContent.map(([r, f]) => [line.match(r), f] as const).find(([m]) => m);
     if (!hits) return errors(num, t(`„${line}“ nicht verstanden`, `“${line}” not understood`));
     let move = hits[1](hits[0]!);
@@ -281,6 +420,8 @@ function readLevel(lines: string[], offset: number, language: Language, opts: Te
       moves.pop();
       return errors(num, added.errors[0]);
     }
+    nums[offset + i] = moves.length;
+    if (move.move === 'exceptionPath') exceptionAt.set(t(`Ausnahme „${move.text}“`, `Exception “${move.text}”`), indent(raw));
   }
 
   // Paths without their own heading: decision with yes / no; "what comes first" does not work without.

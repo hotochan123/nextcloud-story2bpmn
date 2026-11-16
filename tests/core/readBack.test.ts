@@ -66,6 +66,57 @@ const stories: Record<string, Move[]> = {
     { move: 'end', text: 'Abgelehnt' },
     { move: 'task', text: 'Zahlung anweisen', role: 'Buchhaltung' },
     { move: 'end', text: 'Bezahlt' }
+  ],
+  // Job 446: the normal path told before the exception path ("other path first").
+  deferredDeadline: [
+    { move: 'start', text: 'Antrag geht ein', role: 'Sachbearbeitung' },
+    { move: 'task', text: 'Antrag bearbeiten', role: 'Sachbearbeitung' },
+    { move: 'exceptionPath', text: 'nach 2 Tagen', subtype: 'deadline', keepsRunning: 'yes' },
+    { move: 'switchTo', to: 1 },
+    { move: 'end', text: 'Beschieden' },
+    { move: 'end', text: 'Erinnert' }
+  ],
+  deferredError: [
+    { move: 'start', text: 'Antrag geht ein', role: 'Sachbearbeitung' },
+    { move: 'task', text: 'Antrag prüfen', role: 'Sachbearbeitung' },
+    { move: 'exceptionPath', text: 'Antrag unvollständig' },
+    { move: 'switchTo', to: 1 },
+    { move: 'task', text: 'Bescheid schicken', role: 'Sachbearbeitung' },
+    { move: 'end', text: 'Beschieden' },
+    { move: 'end', text: 'Abgelehnt' }
+  ],
+  deferredTwice: [
+    { move: 'start', text: 'Antrag geht ein', role: 'Sachbearbeitung' },
+    { move: 'task', text: 'Antrag bearbeiten', role: 'Sachbearbeitung' },
+    { move: 'exceptionPath', text: 'Antrag zurückgezogen', subtype: 'message', keepsRunning: 'yes' },
+    { move: 'switchTo', to: 1 },
+    { move: 'task', text: 'Bescheid schicken', role: 'Sachbearbeitung' },
+    { move: 'exceptionPath', text: 'nach 5 Tagen', subtype: 'deadline', keepsRunning: 'yes' },
+    { move: 'switchTo', to: 1 },
+    { move: 'end', text: 'Beschieden' },
+    { move: 'end', text: 'Nachgefragt' },
+    { move: 'end', text: 'Zurückgezogen' }
+  ],
+  begunThenDeferred: [
+    { move: 'start', text: 'Antrag geht ein', role: 'Sachbearbeitung' },
+    { move: 'task', text: 'Antrag bearbeiten', role: 'Sachbearbeitung' },
+    { move: 'exceptionPath', text: 'nach 2 Tagen', subtype: 'deadline', keepsRunning: 'yes' },
+    { move: 'task', text: 'Erinnerung schicken', role: 'Teamleitung' },
+    { move: 'switchTo', to: 1 },
+    { move: 'task', text: 'Bescheid schicken', role: 'Sachbearbeitung' },
+    { move: 'end', text: 'Beschieden' },
+    { move: 'end', text: 'Erinnert' }
+  ],
+  deferredInDecision: [
+    { move: 'start', text: 'Rechnung geht ein', role: 'Buchhaltung' },
+    { move: 'decision', question: 'Betrag über 5000 €?', yes: 'ja', no: 'nein' },
+    { move: 'task', text: 'Zahlung freigeben', role: 'Führungskraft' },
+    { move: 'exceptionPath', text: 'nach 3 Tagen', subtype: 'deadline', keepsRunning: 'yes' },
+    { move: 'switchTo', to: 1 },
+    { move: 'merge' },
+    { move: 'end', text: 'Erinnert' },
+    { move: 'task', text: 'Zahlung anweisen', role: 'Buchhaltung' },
+    { move: 'end', text: 'Bezahlt' }
   ]
 };
 
@@ -89,6 +140,37 @@ test('reading back: written by hand, without brackets and indentation', () => {
   assert.equal(g.done, true);
   assert.deepEqual(r.moves[2], { move: 'decision', question: 'Betrag über 5000 €?', yes: 'ja', no: 'nein' });
   assert.deepEqual(r.moves[1], { move: 'task', text: 'Rechnung prüfen', role: 'Buchhaltung' });
+});
+
+test('reading back: an exception typed without indentation and without BACK ON THE PATH stays the exception path (job 446)', () => {
+  const r = read(['ES BEGINNT: [A] bei [@B].', '[@B] soll [Prüfen].', 'AUSNAHME [kaputt]:', 'ENDE: [Fehler].', '[@B] soll [Weiter].', 'ENDE: [Fertig].'].join('\n'));
+  assert.deepEqual(r.errors, []);
+  assert.equal(r.moves.some((z) => z.move === 'switchTo'), false);
+  const g = tell(r.moves);
+  assert.equal(g.done, true);
+  const errorEnd = g.ir.nodes.find((n) => n.name === 'Fehler')!;
+  const exception = g.ir.nodes.find((n) => n.kind === 'exception')!;
+  assert.ok(g.ir.edges.some((e) => e.from === exception.id && e.to === errorEnd.id));
+});
+
+test('reading back: two exceptions of the same name, one told after the normal path, give no silent other diagram (job 446)', () => {
+  const moves: Move[] = [
+    { move: 'start', text: 'A', role: 'B' },
+    { move: 'task', text: 'Eins', role: 'B' },
+    { move: 'exceptionPath', text: 'kaputt' },
+    { move: 'end', text: 'Fehler 1' },
+    { move: 'task', text: 'Zwei', role: 'B' },
+    { move: 'exceptionPath', text: 'kaputt' },
+    { move: 'switchTo', to: 1 },
+    { move: 'end', text: 'Fertig' },
+    { move: 'end', text: 'Fehler 2' }
+  ];
+  const g = tell(moves);
+  assert.deepEqual(g.errors, []);
+  const text = asSourceText(g.storyText);
+  const r = read(text);
+  assert.deepEqual(r.errors, [], text);
+  assert.deepEqual(tell(r.moves).ops, g.ops);
 });
 
 test('reading back: the error names the line', () => {

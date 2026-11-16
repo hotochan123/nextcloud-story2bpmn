@@ -158,7 +158,8 @@ test('387 AK2 sections that do not fit report their line', () => {
     const r = read(lines.join('\n'), 'de');
     assert.equal(r.line, line, lines.at(-1) ?? '');
     assert.match(r.errors[0], message);
-    assert.match(r.errors[0], new RegExp(`^Zeile ${line}:`));
+    // Job 449: the number of the line in the story; a section heading has none, its message stands alone.
+    assert.match(r.errors[0], r.numbers[line - 1] === null ? /^Kein Schritt/ : new RegExp(`^Zeile ${r.numbers[line - 1]}:`));
   }
 });
 

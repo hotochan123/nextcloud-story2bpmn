@@ -126,6 +126,16 @@ export function validateIR(ir: ProcessIR): Issue[] {
   return issues;
 }
 
+/**
+ * Flow nodes reached from the start from which neither an end nor one of `tips` (where a path still
+ * open goes on) can be reached: what deleting must not leave behind (job 452).
+ */
+export function endless(ir: ProcessIR, tips: string[] = []): Set<string> {
+  const forward = reach(ir, ir.nodes.filter((n) => n.kind === 'start').map((n) => n.id), 'forward');
+  const backward = reach(ir, [...ir.nodes.filter((n) => n.kind === 'end').map((n) => n.id), ...tips], 'backward');
+  return new Set(ir.nodes.filter((n) => isFlowNode(n) && !isAnytime(n) && forward.has(n.id) && !backward.has(n.id)).map((n) => n.id));
+}
+
 function reach(ir: ProcessIR, seeds: string[], dir: 'forward' | 'backward'): Set<string> {
   const seen = new Set(seeds);
   const queue = [...seeds];

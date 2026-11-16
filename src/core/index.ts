@@ -3,9 +3,10 @@
 export { run, emptyProcess } from './pipeline.js';
 export type { PipelineInput, PipelineResult } from './pipeline.js';
 export { tell, asText, MAX_PATHS, descends, sameMoves, EVENT_KINDS, END_KINDS, START_KINDS, MAX_STORY_MOVES, countMoves } from './story.js';
-export { stillLeads, NOT_ON_OPEN, splice, replaceMove, removeBranch, deletePath, addPaths, tellOpen, reopenPath, reopenLegacyGoTos, retargetGoTos, dropRefused, moveLine, MAX_DROP_ROUNDS, insertBefore, addException, addTrigger, INSERTABLE, pathCount, BRANCHES } from './storyEdit.js';
+export { stillLeads, noEnd, NOT_ON_OPEN, splice, replaceMove, removeBranch, deletePath, addPaths, tellOpen, reopenPath, reopenLegacyGoTos, retargetGoTos, dropRefused, moveLine, MAX_DROP_ROUNDS, insertBefore, addException, addTrigger, INSERTABLE, pathCount, BRANCHES, swapPaths, joinAllFrom, joinAllOffered, moveOffered, moveEnds, moveTargets, moveSteps, pathLabel } from './storyEdit.js';
 export type { Move, Line, Target, StoryState, TellOptions, Sub, Trace } from './story.js';
-export { read, asSourceText, MAX_LINE, MAX_LINES } from './readBack.js';
+export type { MoveTarget } from './storyEdit.js';
+export { read, lineNumbers, asSourceText, MAX_LINE, MAX_LINES } from './readBack.js';
 export { fromBpmn } from './fromBpmn.js';
 export type { ReadResult } from './fromBpmn.js';
 export { renderBoth, toSvg, preview } from './render.js';

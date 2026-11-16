@@ -104,9 +104,11 @@ test('402 AK5 an ambiguous name without the story before is an error with its li
 		const line = text.split('\n').findIndex((l) => /WEITER BEI|CONTINUE AT/.test(l)) + 1;
 		const r = read(text, language);
 		assert.equal(r.line, line);
+		// Job 449: the message names the number the story shows on that line.
+		const num = tell(TWO, language).storyText[line - 1].move! + 1;
 		assert.equal(r.errors[0], language === 'de'
-			? `Zeile ${line}: „Buchen“ gibt es mehrmals – bitte die Schritte verschieden benennen`
-			: `Line ${line}: “Buchen” exists more than once – please give the steps different names`);
+			? `Zeile ${num}: „Buchen“ gibt es mehrmals – bitte die Schritte verschieden benennen`
+			: `Line ${num}: “Buchen” exists more than once – please give the steps different names`);
 		// The story before had no "continue at" there: the same.
 		assert.equal(textMoves(text, TWO_BASE, language).line, line);
 	}

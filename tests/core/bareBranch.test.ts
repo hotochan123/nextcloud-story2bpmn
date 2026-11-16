@@ -47,7 +47,7 @@ test('AK1 "in parallel" with two and three empty strands is left out the same wa
 
 test('AK1 the story text keeps the branch as told', () => {
   const s = told([start, urgent, merge, merge, task('Chef'), end('Fertig')]);
-  assert.deepEqual(s.storyText.map((l) => l.text.split(' ')[0]), ['ES', 'WENN', '→', 'ZUSAMMEN.', 'SONST', 'ZUSAMMEN.', '[@Team]', 'ENDE:']);
+  assert.deepEqual(s.storyText.map((l) => l.text.split(' ')[0]), ['ES', 'WENN', '→', 'ZUSAMMENFÜHREN.', 'SONST', 'ZUSAMMENFÜHREN.', '[@Team]', 'ENDE:']);
 });
 
 // The inner branch sits on the first path: a branch in the last path of another one merges wrongly

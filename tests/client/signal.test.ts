@@ -67,7 +67,9 @@ test('384 AK7 suggestions: the signal names of this story, each once', async () 
 test('384 AK7 colour key shows "Signal" only when the story has one; triangle in the story card', () => {
 	const card = readFileSync('src/components/StoryCard.vue', 'utf8');
 	assert.match(card, /keyObjects\(\) \{[\s\S]*?this\.view\.signals\?\.length/);
-	assert.match(card, /<svg v-if="part\.object === 'signal'" class="tri"/);
+	assert.match(card, /<StoryParts v-else :parts="lineParts\(l\.text\)" :names="objects" \/>/);
+	// Job 448: the parts of a line are drawn by StoryParts.vue
+	assert.match(readFileSync('src/components/StoryParts.vue', 'utf8'), /<svg v-if="part\.object === 'signal'" class="tri"/);
 	const form = readFileSync('src/components/MoveForm.vue', 'utf8');
 	assert.match(form, /<datalist /);
 });

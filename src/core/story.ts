@@ -2,7 +2,7 @@ import { Op, ProcessIR, Node, EventKind, EndKind, ForEach, incoming, outgoing, n
 import { applyOps } from './apply.js';
 import { emptyProcess } from './pipeline.js';
 import { Language, tx } from './language.js';
-export { stillLeads, NOT_ON_OPEN, splice, replaceMove, BRANCHES, pathCount, removeBranch, deletePath, addPaths, tellOpen, reopenPath, reopenLegacyGoTos, INSERTABLE, insertBefore, addException, addTrigger } from './storyEdit.js';
+export { stillLeads, NOT_ON_OPEN, splice, replaceMove, BRANCHES, pathCount, removeBranch, deletePath, addPaths, tellOpen, reopenPath, reopenLegacyGoTos, INSERTABLE, insertBefore, addException, addTrigger, swapPaths, joinAllFrom, joinAllOffered, moveOffered, moveEnds, moveTargets, moveSteps, pathLabel } from './storyEdit.js';
 
 /**
  * The process description as a story: move by move, and after each move
@@ -93,7 +93,9 @@ type Thread = {
 /** move: index of the move the line comes from; missing for path headings. */
 /** sub: index of the task move whose subprocess the line belongs to; move then counts in that subprocess.
  *  any: inside that subprocess, index of the move of what can come at any time whose flow has the line; move then counts in that flow. */
-export type Line = { depth: number; text: string; move?: number; sub?: number; any?: number };
+/** path: on the first heading of a path of a check, "what comes first" or "in parallel": the move of that
+ *  branch on its level and the number of the path (job 455, swapping paths from its line). */
+export type Line = { depth: number; text: string; move?: number; sub?: number; any?: number; path?: { at: number; n: number } };
 
 /** A subprocess as told: its state (IDs of its own level) and the prefix of its IDs in the whole diagram. */
 export type Sub = { id: string; state: StoryState };
@@ -165,6 +167,8 @@ export type StoryState = {
   bare?: number[];
   /** With TellOptions.legacyGoTo: the "continue at" moves accepted only as 0.1.0 did (job 438). */
   legacyGoTos?: number[];
+  /** Nodes where a path still open (also one waiting for its merge) goes on: an end can still come from there (job 452). */
+  tips?: string[];
   /** Moves of this level where an error came up, in order (job 439); missing without errors. */
   refused?: number[];
 };
@@ -245,6 +249,15 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
   /** Move in which a branch (gateway or exception node) was told. */
   const splitMove = new Map<string, number>();
   const branch = (from: Thread, key: string): string => ((trace.parent[key] = from.key), key);
+  /** Paths whose first heading is written: a later heading of theirs ("back on the path") names no path. */
+  const headed = new Set<string>();
+  const pathOf = (key: string): { at: number; n: number } | undefined => {
+    const m = /^(\d+)\.(\d+)$/.exec(key);
+    if (!m || headed.has(key)) return undefined;
+    headed.add(key);
+    const b = moves[Number(m[1])]?.move;
+    return b === 'decision' || b === 'concurrent' ? { at: Number(m[1]), n: Number(m[2]) } : undefined;
+  };
   let current = -1;
   let num = 0;
   const newId = (subtype: string) => `${subtype}_${++num}`;
@@ -528,7 +541,10 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
     }
     // Call only after a successful move, and before the threads are rebuilt.
     const write = (text: string) => {
-      if (f.head) storyText.push({ depth: Math.max(f.depth - 1, 0), text: f.head });
+      if (f.head) {
+        const path = pathOf(f.key);
+        storyText.push({ depth: Math.max(f.depth - 1, 0), text: f.head, ...(path && { path }) });
+      }
       f.head = undefined;
       storyText.push({ depth: f.depth, text, move: i });
     };
@@ -586,7 +602,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
             (system ? ` in [#${k(system)}]` : '') +
             (documents.length ? ` ${t('mit', 'with')} ${documents.map((d) => `[+${k(d)}]`).join(', ')}` : '') +
             (deadline ? t(`, Frist [!${k(deadline)}]`, `, deadline [!${k(deadline)}]`) : '') +
-            (forEach ? `, ${t('FÜR JEDE', 'FOR EACH')} [${k(forEach.item)}], ${forEach.parallel ? t('GLEICHZEITIG', 'IN PARALLEL') : t('NACHEINANDER', 'IN SEQUENCE')}` : '') +
+            (forEach ? `, ${t('JE', 'FOR EACH')} [${k(forEach.item)}], ${forEach.parallel ? t('GLEICHZEITIG', 'IN PARALLEL') : t('NACHEINANDER', 'IN SEQUENCE')}` : '') +
             (sub ? t(', MIT TEILABLAUF', ', WITH SUBPROCESS') : '');
           if (sub) subs[i] = { id, state: sub };
           nodes[i] = id;
@@ -698,7 +714,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
       case 'exceptionPath': {
         if (!f.task) {
           const what = typeof z.text === 'string' ? k(z.text) : '';
-          errors.push(t(`Vor „FALLS ${what}“ steht kein Schritt, an dem die Ausnahme hängen kann`, `There is no step right before “IN CASE OF ${what}” for the exception to attach to`));
+          errors.push(t(`Vor „AUSNAHME ${what}“ steht kein Schritt, an dem die Ausnahme hängen kann`, `There is no step right before “EXCEPTION ${what}” for the exception to attach to`));
           break;
         }
         const id = newId('Ausnahme');
@@ -708,7 +724,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
         if (!tu({ op: 'attachException', nodeId: f.task, event })) break;
         // An expired deadline carries the deadline marker so it can be told apart from the error.
         // Message named explicitly: otherwise the text could not be read back unambiguously (like an error).
-        write(`${t('FALLS', 'IN CASE OF')}${trigger === 'message' ? t(' NACHRICHT', ' MESSAGE') : ''} [${trigger === 'deadline' ? '!' : ''}${k(z.text)}]${goTo ? t(', Schritt läuft weiter', ', step continues') : ''}:`);
+        write(`${t('AUSNAHME', 'EXCEPTION')}${trigger === 'message' ? t(' NACHRICHT', ' MESSAGE') : ''} [${trigger === 'deadline' ? '!' : ''}${k(z.text)}]${goTo ? t(', Schritt läuft weiter', ', step continues') : ''}:`);
         splitDepth.set(id, f.depth);
         splitPath.set(id, f.path);
         splitFrom.set(id, f);
@@ -718,7 +734,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
         threads.splice(
           0,
           1,
-          { key: branch(f, `${i}.0`), origin: id, laneId: f.laneId, path: t(`Falls „${z.text}“`, `In case of “${z.text}”`), title: t('Was passiert dann?', 'What happens then?'), splits: [...f.splits, id], depth: f.depth + 1 },
+          { key: branch(f, `${i}.0`), origin: id, laneId: f.laneId, path: t(`Ausnahme „${z.text}“`, `Exception “${z.text}”`), title: t('Was passiert dann?', 'What happens then?'), splits: [...f.splits, id], depth: f.depth + 1 },
           // If the task keeps running, there is nothing to merge: the normal path stays as it was.
           { ...f, key: branch(f, `${i}.1`), task: undefined, title: t(`Zurück zum normalen Weg nach „${name(f.task)}“ – wie geht es weiter?`, `Back to the normal path after “${name(f.task)}” – what happens next?`), splits: goTo ? f.splits : [...f.splits, id] }
         );
@@ -756,7 +772,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
           if (!tu({ op: 'addNode', node: { id, kind: 'step', name: t('Noch offen', 'Still open'), laneId: f.laneId } }, open) || !connect(f, id)) break;
           nodes[i] = id;
           trace.closes[i] = splitMove.get(split);
-          write(t('NOCH OFFEN, DANN ZUSAMMEN.', 'STILL OPEN, THEN MERGE.'));
+          write(t('NOCH OFFEN, DANN ZUSAMMENFÜHREN.', 'STILL OPEN, THEN MERGE.'));
           threads.shift();
           parked.set(split, [...(parked.get(split) ?? []), { ...f, origin: id, condition: undefined, otherwise: undefined, task: undefined }]);
           checkMerge();
@@ -782,7 +798,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
         trace.switched[i] = added.key;
         // Already begun? Then add a heading when resuming - otherwise the
         // continuation in the story text reads like part of the path before.
-        const old = f.head ? f : { ...f, head: f.path ? t(`WEITER AUF DEM WEG ${f.path}:`, `BACK ON THE PATH ${f.path}:`) : t('WEITER AUF DEM HAUPTWEG:', 'BACK ON THE MAIN PATH:') };
+        const old = f.head ? f : { ...f, head: f.path ? t(`WIEDER AUF DEM WEG ${f.path}:`, `BACK ON THE PATH ${f.path}:`) : t('WIEDER AUF DEM HAUPTWEG:', 'BACK ON THE MAIN PATH:') };
         threads.splice(0, 1, added, old);
         break;
       }
@@ -798,7 +814,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
           break;
         }
         trace.closes[i] = splitMove.get(split);
-        write(t('ZUSAMMEN.', 'MERGE.'));
+        write(t('ZUSAMMENFÜHREN.', 'MERGE.'));
         threads.shift();
         parked.set(split, [...(parked.get(split) ?? []), f]);
         checkMerge();
@@ -903,6 +919,7 @@ export function tell(moves: Move[], language?: Language, opts: TellOptions = {})
     path: f.path,
     open: threads.slice(1).map((o) => o.path ?? t(`Normaler Weg nach „${name(o.origin)}“`, `Normal path after “${name(o.origin)}”`)),
     here: f.origin,
+    tips: [...threads, ...[...parked.values()].flat()].map((o) => o.origin),
     next: { head: f.head, depth: f.depth },
     heads: threads.map((o) => o.head),
     done: false,

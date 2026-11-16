@@ -1,6 +1,7 @@
 import { ProcessIR, nodeById, incoming } from './ir.js';
 import { Language, tx } from './language.js';
-import { tell, shownTarget, MAX_PATHS, k, descends } from './story.js';
+import { tell, shownTarget, MAX_PATHS, k, descends, branchName } from './story.js';
+import { endless } from './validate.js';
 import type { Move, StoryState, TellOptions } from './story.js';
 
 /**
@@ -15,6 +16,43 @@ export function stillLeads(j: number, ir: ProcessIR, nodes: (string | undefined)
   const t = (de: string, en: string) => tx(language, de, en);
   const to = shownTarget(ir, nodes, id, t);
   return { error: t(`Zeile ${j + 1} führt noch zu ${to} – dort zuerst ändern`, `Line ${j + 1} still leads to ${to} – change it there first`), line: j };
+}
+
+/** Old index of the move that landed at `k` (`index`: per old move its new index), or undefined. */
+const indexOfNew = (index: (number | undefined)[], k: number): number | undefined => {
+  const j = index.indexOf(k);
+  return j < 0 ? undefined : j;
+};
+
+/**
+ * Refusal when deleting leaves a part of the flow from which no end can be reached any more (job 452):
+ * `out` is the story after deleting, `back(k)` the old index of its move k (undefined: a move that is new).
+ * What was without an end already before does not count. `line`: the first "continue at" that leads
+ * back into that part (old index). None: undefined.
+ */
+export function noEnd(old: StoryState, out: Move[], back: (k: number) => number | undefined, language?: Language, opts: TellOptions = {}): { error: string; line?: number } | undefined {
+  const t = (de: string, en: string) => tx(language, de, en);
+  const next = tell(out, language, opts);
+  const lost = endless(next.ir, next.tips);
+  if (!lost.size) return undefined;
+  const before = new Set([...endless(old.ir, old.tips)].map((id) => old.moveOf[id]));
+  const fresh = [...lost].some((id) => {
+    const k = next.moveOf[id];
+    if (k === undefined) return false;
+    const j = back(k);
+    return j === undefined || !before.has(j);
+  });
+  if (!fresh) return undefined;
+  for (const [k, m] of out.entries()) {
+    const j = back(k);
+    if (m.move !== 'goTo' || j === undefined || !lost.has(m.target)) continue;
+    const to = shownTarget(next.ir, next.nodes, m.target, t);
+    return {
+      error: t(`Danach käme der Ablauf nie zu einem Ende: Zeile ${j + 1} führt zurück zu ${to} – dort zuerst ändern`, `Afterwards the flow would never reach an end: line ${j + 1} leads back to ${to} – change it there first`),
+      line: j
+    };
+  }
+  return { error: t('Danach käme der Ablauf nie zu einem Ende', 'Afterwards the flow would never reach an end') };
 }
 
 /** Refusal for the first "continue at" that stays but leads into a move that goes; none: undefined. */
@@ -183,7 +221,8 @@ export function removeBranch(moves: Move[], at: number, keep: number, language?:
   const check = tell(out, language, opts).errors;
   if (check.length)
     return { error: t('Ohne diese Verzweigung passt die Geschichte nicht mehr zusammen; ändern Sie zuerst die Wege um sie herum', 'Without this branch the story no longer fits together; change the paths around it first') };
-  return { moves: out };
+  const loop = noEnd(old, out, (k) => indexOfNew(index, k), language, opts);
+  return loop ?? { moves: out };
 }
 
 
@@ -288,7 +327,8 @@ export function deletePath(moves: Move[], at: number, path: number, language?: L
   }
   if (tell(out, language, opts).errors.length)
     return { error: t('Ohne diesen Weg passt die Geschichte nicht mehr zusammen; ändern Sie zuerst die Wege um ihn herum', 'Without this path the story no longer fits together; change the paths around it first') };
-  return { moves: out };
+  const loop = noEnd(old, out, (k) => indexOfNew(index, k), language, opts);
+  return loop ?? { moves: out };
 }
 
 /**
@@ -757,7 +797,7 @@ export function moveLine(z: Move, language?: Language, name?: string): string {
       const system = z.system?.trim();
       const deadline = z.deadline?.trim();
       const documents = (z.documentName ?? '').split(',').map((d) => d.trim()).filter(Boolean);
-      const each = typeof z.each === 'string' && k(z.each) ? `, ${t('FÜR JEDE', 'FOR EACH')} [${k(z.each)}], ${z.eachOrder === 'parallel' ? t('GLEICHZEITIG', 'IN PARALLEL') : t('NACHEINANDER', 'IN SEQUENCE')}` : '';
+      const each = typeof z.each === 'string' && k(z.each) ? `, ${t('JE', 'FOR EACH')} [${k(z.each)}], ${z.eachOrder === 'parallel' ? t('GLEICHZEITIG', 'IN PARALLEL') : t('NACHEINANDER', 'IN SEQUENCE')}` : '';
       const extra =
         (system ? ` in [#${k(system)}]` : '') +
         (documents.length ? ` ${t('mit', 'with')} ${documents.map((d) => `[+${k(d)}]`).join(', ')}` : '') +
@@ -779,10 +819,10 @@ export function moveLine(z: Move, language?: Language, name?: string): string {
     case 'exceptionPath': {
       const trigger = z.subtype === 'deadline' || z.subtype === 'message' ? z.subtype : 'error';
       const goTo = z.keepsRunning === 'yes' && trigger !== 'error';
-      return `${t('FALLS', 'IN CASE OF')}${trigger === 'message' ? t(' NACHRICHT', ' MESSAGE') : ''} [${trigger === 'deadline' ? '!' : ''}${text}]${goTo ? t(', Schritt läuft weiter', ', step continues') : ''}:`;
+      return `${t('AUSNAHME', 'EXCEPTION')}${trigger === 'message' ? t(' NACHRICHT', ' MESSAGE') : ''} [${trigger === 'deadline' ? '!' : ''}${text}]${goTo ? t(', Schritt läuft weiter', ', step continues') : ''}:`;
     }
     case 'merge':
-      return t('ZUSAMMEN.', 'MERGE.');
+      return t('ZUSAMMENFÜHREN.', 'MERGE.');
     case 'end': {
       const how = z.subtype === 'message' ? t(' mit Nachricht', ' with a message') : z.subtype === 'signal' ? t(' mit Signal', ' with a signal') : z.subtype === 'cancel' ? t(', alles abbrechen', ', stop everything') : '';
       return `${t('ENDE', 'END')}${how}: [${text}].`;
@@ -790,10 +830,417 @@ export function moveLine(z: Move, language?: Language, name?: string): string {
     case 'goTo':
       return k(name ?? '') ? `${t('WEITER BEI', 'CONTINUE AT')} [${k(name ?? '')}].` : t('WEITER BEI …', 'CONTINUE AT …');
     case 'openPath':
-      return z.joins ? t('NOCH OFFEN, DANN ZUSAMMEN.', 'STILL OPEN, THEN MERGE.') : t('NOCH OFFEN.', 'STILL OPEN.');
+      return z.joins ? t('NOCH OFFEN, DANN ZUSAMMENFÜHREN.', 'STILL OPEN, THEN MERGE.') : t('NOCH OFFEN.', 'STILL OPEN.');
     case 'switchTo':
       return t('(einen anderen offenen Weg zuerst erzählen)', '(tell another open path first)');
     default:
       return text;
   }
+}
+
+/**
+ * Swaps path `path` and path `path + 1` of the branch told in move `at` (a check, "what comes first" or
+ * "in parallel", job 455): the labels (and kinds) of the two paths trade places in the branch move, and
+ * so do the moves told on them, so that the story tells them in the new order. The flow stays the same:
+ * every step keeps its condition, "continue at" keeps its target. The otherwise path of a check stays
+ * the last one. Refused when the moves of the two paths do not lie each in one block right after each
+ * other (a path not told yet, pulling forward on one of them), or when a "continue at" would then lead
+ * to something told only later. `opts`: as for tell().
+ */
+export function swapPaths(moves: Move[], at: number, path: number, language?: Language, opts: TellOptions = {}): { moves: Move[] } | { error: string } {
+  const t = (de: string, en: string) => tx(language, de, en);
+  const z = moves[at];
+  if (!z || (z.move !== 'decision' && z.move !== 'concurrent')) return { error: t('Hier verzweigt sich nichts', 'Nothing branches here') };
+  const count = pathCount(z);
+  const check = z.move === 'decision' && z.subtype !== 'first';
+  if (!Number.isInteger(path) || path < 0 || path + 1 >= count || (check && path + 1 === count - 1))
+    return { error: t('Diesen Weg gibt es hier nicht', 'There is no such path here') };
+  const refuse = { error: t('Diese Wege lassen sich hier nicht tauschen; erzählen Sie zuerst beide Wege zu Ende', 'These paths cannot be swapped here; tell both paths to their end first') };
+  const old = tell(moves, language, opts);
+  if (old.errors.length) return refuse;
+  const { owner, switched } = old.trace;
+  const a = `${at}.${path}`;
+  const b = `${at}.${path + 1}`;
+  const on = (key: string | undefined, root: string) => descends(old.trace, key, root);
+  const inA = moves.flatMap((_, j) => (j > at && on(owner[j], a) ? [j] : []));
+  const inB = moves.flatMap((_, j) => (j > at && on(owner[j], b) ? [j] : []));
+  const piece = (list: number[]) => list.length > 0 && list.every((j, n) => n === 0 || j === list[n - 1] + 1);
+  if (!piece(inA) || !piece(inB) || inA[inA.length - 1] + 1 !== inB[0]) return refuse;
+  // Pulling forward one of the two paths (or on them) depends on the order they are told in.
+  if (moves.some((m, j) => m.move === 'switchTo' && (on(switched[j], a) || on(switched[j], b) || on(owner[j], a) || on(owner[j], b)))) return refuse;
+
+  let swapped: Move;
+  if (z.move === 'concurrent') swapped = z;
+  else {
+    const trade = <T,>(list: T[]): T[] => list.map((x, j) => (j === path ? list[path + 1] : j === path + 1 ? list[path] : x));
+    const labels = trade([z.yes, ...(z.more ?? []), z.no]);
+    // Same fields in the same order as before (swapping twice gives the very move back).
+    const d: Record<string, unknown> = { ...z, yes: labels[0], no: labels[labels.length - 1] };
+    if (labels.length > 2) d.more = labels.slice(1, -1);
+    if (z.subtype === 'first') {
+      const kinds = trade([z.yesKind, ...(z.more ?? []).map((_, n) => z.moreKinds?.[n]), z.noKind]);
+      const middle = kinds.slice(1, -1);
+      const set = (key: string, v: unknown) => (v ? (d[key] = v) : delete d[key]);
+      set('yesKind', kinds[0]);
+      set('noKind', kinds[kinds.length - 1]);
+      set('moreKinds', middle.some(Boolean) ? middle.map((k) => k ?? '') : undefined);
+    }
+    swapped = d as Move;
+  }
+
+  // New order of the old moves: path b's moves first, then path a's.
+  const order = [...moves.keys()].filter((j) => !inA.includes(j) && !inB.includes(j));
+  const p = order.indexOf(inA[0] - 1) + 1;
+  order.splice(p, 0, ...inB, ...inA);
+  const index: number[] = [];
+  order.forEach((j, k) => (index[j] = k));
+  const out: Move[] = [];
+  for (const j of order) {
+    const m = moves[j];
+    if (j === at) {
+      out.push(swapped);
+      continue;
+    }
+    if (m.move === 'goTo') {
+      const from = old.nodes.indexOf(m.target);
+      if (from >= 0) {
+        // A target told only later (it moved behind the "continue at") cannot be reached from here.
+        const id = index[from] < out.length ? tell(out, language, opts).nodes[index[from]] : undefined;
+        if (!id) return refuse;
+        out.push({ ...m, target: id });
+        continue;
+      }
+    }
+    out.push(m);
+  }
+  const next = tell(out, language, opts);
+  if (next.errors.length) return refuse;
+  // Each move lies on the path it had, under its new number; the open points stay as they were.
+  const onNew = (j: number, root: string) => descends(next.trace, next.trace.owner[index[j]], root);
+  if (!inA.every((j) => onNew(j, b)) || !inB.every((j) => onNew(j, a))) return refuse;
+  if (next.trace.keys.length !== old.trace.keys.length || (next.ir.openPoints?.length ?? 0) !== (old.ir.openPoints?.length ?? 0)) return refuse;
+  return { moves: out };
+}
+
+/** Lines that "From here on for all paths" is not offered on: they close or open a path, or lie outside the flow. */
+const NOT_JOINABLE: Move['move'][] = ['merge', 'openPath', 'switchTo', 'exceptionPath', 'start', 'orStart', 'anytime'];
+
+/**
+ * The path of a branch that move `i` lies on (job 456): the first key `<b>.<n>` above its owner; the
+ * continuation of a branch inside it (`<x>+`) is skipped. Undefined on the main path and where that path
+ * belongs to an exception (the exception path or the normal path beside it).
+ */
+function branchPathOf(moves: Move[], trace: StoryState['trace'], i: number): { key: string; b: number } | undefined {
+  for (let key = trace.owner[i]; key !== undefined && key !== 'r'; key = trace.parent[key]) {
+    const m = /^(\d+)\.\d+$/.exec(key);
+    if (!m) continue;
+    const b = Number(m[1]);
+    const z = moves[b];
+    return z?.move === 'decision' || z?.move === 'concurrent' ? { key, b } : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Does the line menu of move `i` offer "From here on for all paths" (job 456)? Only from the trace of
+ * the story as told now, without replaying it: a line on a path of a check, "what comes first" or
+ * "in parallel" that is not the first line of that path, and not a merge, a path still open or pulling forward.
+ */
+export function joinAllOffered(moves: Move[], i: number, trace: StoryState['trace']): boolean {
+  const z = moves[i];
+  if (!z || NOT_JOINABLE.includes(z.move)) return false;
+  const p = branchPathOf(moves, trace, i);
+  if (!p) return false;
+  for (let j = p.b + 1; j < i; j++) if (descends(trace, trace.owner[j], p.key)) return true;
+  return false;
+}
+
+/**
+ * "From here on for all paths" (job 456): the path of move `i` merges right before it, and move `i` with
+ * everything told after it on that path comes after the merge of the branch, for all its paths. The other
+ * paths keep what is told on them: one that merges already stays, one that ends in a path still open
+ * (or is not told yet) becomes a placeholder that runs on into the merge. Refused when another path ends
+ * on its own (an end, "continue at"), when the path of `i` ends on its own and something is told after
+ * the merge already, when a "continue at" would lead into the moved part from before it, or when the
+ * result does not replay. `at`: the new index of move `i`. `opts`: as for tell().
+ */
+export function joinAllFrom(moves: Move[], i: number, language?: Language, opts: TellOptions = {}): { moves: Move[]; at: number } | { error: string; line?: number } {
+  const t = (de: string, en: string) => tx(language, de, en);
+  const fits = { error: t('Ab hier für alle Wege passt hier nicht; ändern Sie zuerst die Wege um diese Zeile', 'From here on for all paths does not fit here; change the paths around this line first') };
+  const old = tell(moves, language, opts);
+  if (old.errors.length || !joinAllOffered(moves, i, old.trace)) return fits;
+  const { owner, closes, keys } = old.trace;
+  const { key: P, b } = branchPathOf(moves, old.trace, i)!;
+  const on = (j: number, root: string) => descends(old.trace, owner[j], root);
+  // Pulling forward counts open paths by their position: that changes with the new order.
+  if (moves.some((m, j) => j > b && m.move === 'switchTo')) return fits;
+  const rest = moves.flatMap((_, j) => (j >= i && on(j, P) ? [j] : []));
+  if (rest.some((j, n) => j !== i + n)) return fits;
+  // The path's own merge into the branch (a merge, or a placeholder that runs on into it) is its last move.
+  const own = rest.find((j) => closes[j] === b);
+  if (own !== undefined && own !== rest[rest.length - 1]) return fits;
+  const moved = own === undefined ? rest : rest.slice(0, -1);
+  const cont = `${b}+`;
+  if (own === undefined && moves.some((_, j) => on(j, cont)))
+    return { error: t('Nach dem Zusammenführen ist schon erzählt, wie es weitergeht – das passt hier nicht', 'What happens after the merge is told already – that does not fit here') };
+
+  const joins: Move = { move: 'openPath', joins: true };
+  /** Paths of the branch not told to their end yet: they get a placeholder once their moves are told. */
+  const pending = new Map<string, number[]>();
+  /** A path still open at its end becomes a placeholder that runs on into the merge. */
+  const convert = new Set<number>();
+  for (let n = 0; n < pathCount(moves[b]); n++) {
+    const Q = `${b}.${n}`;
+    if (Q === P) continue;
+    const qs = moves.flatMap((_, j) => (j > b && on(j, Q) ? [j] : []));
+    if (qs.some((j) => closes[j] === b)) continue;
+    if (keys.includes(Q)) {
+      pending.set(Q, qs);
+      continue;
+    }
+    const last = qs[qs.length - 1];
+    if (last !== undefined && moves[last].move === 'openPath' && !(moves[last] as { joins?: true }).joins && owner[last] === Q) {
+      convert.add(last);
+      continue;
+    }
+    if (last === undefined) return fits;
+    return { error: t(`Ein anderer Weg dieser Verzweigung endet schon für sich (Zeile ${last + 1}) – dort zuerst ändern`, `Another path of this branch already ends on its own (line ${last + 1}) – change it there first`), line: last };
+  }
+
+  const index: (number | undefined)[] = [];
+  const out: Move[] = [];
+  for (let j = 0; j < i; j++) {
+    index[j] = j;
+    out.push(moves[j]);
+  }
+  // A placeholder of its own path stays one: the path is still open before the merge.
+  out.push(own !== undefined && moves[own].move === 'openPath' ? joins : { move: 'merge' });
+  const movedSet = new Set(moved);
+  let placed = false;
+  let refusal: { error: string; line?: number } | undefined;
+  const push = (j: number): boolean => {
+    let m = convert.has(j) ? joins : moves[j];
+    if (m.move === 'goTo') {
+      const from = old.nodes.indexOf(m.target);
+      if (from >= 0) {
+        const id = index[from] !== undefined ? tell(out, language, opts).nodes[index[from]!] : undefined;
+        if (!id) {
+          refusal = movedSet.has(from)
+            ? { error: t(`Zeile ${j + 1} führt in den Teil, der für alle Wege gelten soll – dort zuerst ändern`, `Line ${j + 1} leads into the part that is to apply to all paths – change it there first`), line: j }
+            : fits;
+          return false;
+        }
+        m = { ...m, target: id };
+      }
+    }
+    index[j] = out.length;
+    out.push(m);
+    return true;
+  };
+  /** Placeholders of paths whose turn it is, and the moved part once the continuation of the branch is current. */
+  const fill = (): boolean => {
+    for (;;) {
+      const cur = tell(out, language, opts).trace.keys[0];
+      const waiting = cur !== undefined ? pending.get(cur) : undefined;
+      if (waiting && waiting.every((j) => index[j] !== undefined)) {
+        out.push(joins);
+        pending.delete(cur!);
+        continue;
+      }
+      if (!placed && cur === cont) {
+        placed = true;
+        for (const j of moved) if (!push(j)) return false;
+        continue;
+      }
+      return true;
+    }
+  };
+  for (let j = i; j < moves.length; j++) {
+    if (j <= rest[rest.length - 1]) continue;
+    if (!fill() || !push(j)) return refusal ?? fits;
+  }
+  if (!fill()) return refusal ?? fits;
+  if (!placed || pending.size) return fits;
+
+  const next = tell(out, language, opts);
+  if (next.errors.length) return fits;
+  if (!moved.every((j) => descends(next.trace, next.trace.owner[index[j]!], cont))) return fits;
+  if (moves.some((_, j) => j !== own && index[j] === undefined)) return fits;
+  const loop = noEnd(old, out, (k) => indexOfNew(index, k), language, opts);
+  return loop ?? { moves: out, at: index[i]! };
+}
+
+/** Lines "Move …" is offered on (job 457): steps, waiting, signals and branches with all their paths. */
+const MOVABLE: Move['move'][] = ['task', 'wait', 'sendSignal', 'decision', 'concurrent'];
+
+/** The path a line is shown on: the continuation after a merge (`<x>+`) stands on the path of its branch. */
+function shownPath(trace: StoryState['trace'], key: string | undefined): string | undefined {
+  let k = key;
+  while (k !== undefined && k.endsWith('+')) k = trace.parent[k];
+  return k;
+}
+
+/** Moves of steps that have an exception hanging on them. */
+function withException(state: StoryState): Set<number> {
+  const out = new Set<number>();
+  for (const n of state.ir.nodes) {
+    if (n.kind !== 'exception') continue;
+    const j = state.moveOf[n.attachedTo];
+    if (j !== undefined) out.add(j);
+  }
+  return out;
+}
+
+/** Last move that goes along with move j: j itself, a branch with every move told on its paths (not after its merge). */
+function carriedEnd(moves: Move[], trace: StoryState['trace'], j: number): number {
+  const z = moves[j];
+  if (z?.move !== 'decision' && z?.move !== 'concurrent') return j;
+  const own = (k: string) => k.startsWith(`${j}.`);
+  let last = j;
+  for (let m = j + 1; m < moves.length; m++) if (descends(trace, trace.owner[m], own)) last = m;
+  return last;
+}
+
+/** Does the line menu of move `i` offer "Move …" (job 457)? From the story as told now, without replaying it. */
+export function moveOffered(moves: Move[], i: number, state: StoryState): boolean {
+  const z = moves[i];
+  return !!z && MOVABLE.includes(z.move) && !withException(state).has(i);
+}
+
+/**
+ * Lines up to which a move can take the lines after it along (job 457), first `i` itself: the next lines on
+ * the same shown path, as long as they are steps, waiting, signals or branches; an end or "continue at" is the last.
+ */
+export function moveEnds(moves: Move[], i: number, state: StoryState): number[] {
+  if (!moveOffered(moves, i, state)) return [];
+  const { trace } = state;
+  const exc = withException(state);
+  const path = shownPath(trace, trace.owner[i]);
+  const out = [i];
+  for (let e = i; ; ) {
+    const j = carriedEnd(moves, trace, e) + 1;
+    const z = moves[j];
+    if (!z || shownPath(trace, trace.owner[j]) !== path || exc.has(j)) break;
+    if (!MOVABLE.includes(z.move) && z.move !== 'end' && z.move !== 'goTo') break;
+    out.push(j);
+    e = j;
+    if (z.move === 'end' || z.move === 'goTo') break;
+  }
+  return out;
+}
+
+/** A place lines can be moved to: before old move `pos`; behind line `after`, at the start of path `path`, or at the start of the flow. */
+export type MoveTarget = { pos: number; after?: number; path?: { at: number; n: number }; start?: true };
+
+/**
+ * Places the lines `i` to `e` can be moved to (job 457), in the order of the story: behind a step, a waiting,
+ * a signal, a trigger or a branch that merges; at the start of a path told already; at the start of a flow
+ * without a trigger. Whether it fits there shows moveSteps.
+ */
+export function moveTargets(moves: Move[], i: number, e: number, state: StoryState): MoveTarget[] {
+  if (!moveEnds(moves, i, state).includes(e)) return [];
+  const { trace } = state;
+  const exc = withException(state);
+  const last = carriedEnd(moves, trace, e);
+  const inBlock = (j: number) => j >= i && j <= last;
+  const same = (pos: number) => pos >= i && pos <= last + 1;
+  const out: MoveTarget[] = [];
+  if (moves[0]?.move !== 'start' && !same(0)) out.push({ pos: 0, start: true });
+  for (const [n, z] of moves.entries()) {
+    if (inBlock(n)) continue;
+    const branch = z.move === 'decision' || z.move === 'concurrent';
+    let fits = false;
+    if (z.move === 'task' || z.move === 'wait' || z.move === 'sendSignal') fits = !exc.has(n);
+    else if (z.move === 'start' || z.move === 'orStart') fits = moves[n + 1]?.move !== 'orStart';
+    else if (branch) fits = trace.closes.some((b) => b === n);
+    const pos = carriedEnd(moves, trace, n) + 1;
+    if (fits && !same(pos)) out.push({ pos, after: n });
+    if (!branch) continue;
+    for (let p = 0; p < pathCount(z); p++) {
+      const first = moves.findIndex((_, j) => j > n && descends(trace, trace.owner[j], `${n}.${p}`));
+      if (first >= 0 && !inBlock(first) && !same(first)) out.push({ pos: first, path: { at: n, n: p } });
+    }
+  }
+  return out.sort((a, b) => a.pos - b.pos);
+}
+
+/** Name of path `n` of the branch in move `b`: the label of a check, the event of "what comes first", the branch of "in parallel". */
+export function pathLabel(moves: Move[], b: number, n: number, language?: Language): string {
+  const z = moves[b];
+  if (z?.move === 'concurrent') return branchName(n, language);
+  if (z?.move !== 'decision') return '';
+  return [z.yes, ...(z.more ?? []), z.no][n] ?? '';
+}
+
+/**
+ * "Move …" (job 457): the lines `i` to `e` (a branch with everything told on its paths) go before old move
+ * `pos` (one of moveTargets), in their order. "Continue at" keeps its target via the move that creates it.
+ * Refused when a "continue at" would then lead to something told only later, when any other line would
+ * land on another path or an exception on another step, when no end could be reached any more, or when the
+ * result does not replay. `at`: the new index of move `i`. `opts`: as for tell().
+ */
+export function moveSteps(moves: Move[], i: number, e: number, pos: number, language?: Language, opts: TellOptions = {}): { moves: Move[]; at: number } | { error: string; line?: number } {
+  const t = (de: string, en: string) => tx(language, de, en);
+  const fits = { error: t('Dorthin lässt sich das nicht verschieben; ändern Sie zuerst die Wege um diese Zeilen', 'This cannot be moved there; change the paths around these lines first') };
+  const old = tell(moves, language, opts);
+  if (old.errors.length) return fits;
+  const target = moveTargets(moves, i, e, old).find((x) => x.pos === pos);
+  if (!target) return fits;
+  const { trace } = old;
+  const last = carriedEnd(moves, trace, e);
+  if (moves.slice(i, last + 1).some((m) => m.move === 'switchTo')) return fits;
+  // A path that begins in the moved lines but is told on after them would be torn apart.
+  const opened = (k: string) => {
+    const m = /^(\d+)\.\d+$/.exec(k);
+    return !!m && Number(m[1]) >= i && Number(m[1]) <= last;
+  };
+  if (moves.some((_, j) => j > last && descends(trace, trace.owner[j], opened))) return fits;
+
+  const block = Array.from({ length: last - i + 1 }, (_, n) => i + n);
+  const order = [...moves.keys()].filter((j) => j < i || j > last);
+  const at = pos >= moves.length ? order.length : order.indexOf(pos);
+  order.splice(at, 0, ...block);
+  const index: number[] = [];
+  order.forEach((j, n) => (index[j] = n));
+  const out: Move[] = [];
+  for (const j of order) {
+    const m = moves[j];
+    if (m.move === 'goTo') {
+      const from = old.nodes.indexOf(m.target);
+      if (from >= 0) {
+        if (index[from] >= out.length)
+          return { error: t(`Zeile ${j + 1} führt danach zu einem Schritt, der erst später erzählt wird – dort zuerst ändern`, `Line ${j + 1} would then lead to a step told only later – change it there first`), line: j };
+        const id = tell(out, language, opts).nodes[index[from]];
+        if (!id) return fits;
+        out.push({ ...m, target: id });
+        continue;
+      }
+    }
+    out.push(m);
+  }
+
+  const next = tell(out, language, opts);
+  if (next.errors.length || out.length !== moves.length) return fits;
+  /** Key of an old path in the new story. */
+  const newKey = (key: string | undefined): string | undefined => {
+    if (key === undefined || key === 'r') return key;
+    const m = /^(\d+)(.*)$/.exec(key);
+    return m ? `${index[Number(m[1])]}${m[2]}` : key;
+  };
+  const moved = shownPath(trace, trace.owner[i]);
+  const goal = target.start ? 'r' : target.path ? `${target.path.at}.${target.path.n}` : shownPath(trace, trace.owner[target.after!]) ?? 'r';
+  for (const [j] of moves.entries()) {
+    const was = shownPath(trace, trace.owner[j]);
+    const want = newKey(j >= i && j <= last && was === moved ? goal : was);
+    if (shownPath(next.trace, next.trace.owner[index[j]]) !== want) return fits;
+  }
+  const keys = (list: (string | undefined)[]) => JSON.stringify([...list].sort());
+  if (keys(trace.keys.map(newKey)) !== keys(next.trace.keys)) return fits;
+  if ((next.ir.openPoints?.length ?? 0) !== (old.ir.openPoints?.length ?? 0)) return fits;
+  // Every exception hangs on the step it hung on.
+  const hangs = (s: StoryState, map: (j: number) => number) =>
+    JSON.stringify(s.ir.nodes.flatMap((n) => (n.kind === 'exception' ? [[map(s.moveOf[n.id]), map(s.moveOf[n.attachedTo])]] : [])).sort());
+  if (hangs(old, (j) => index[j]) !== hangs(next, (j) => j)) return fits;
+  const loop = noEnd(old, out, (k) => indexOfNew(index, k), language, opts);
+  return loop ?? { moves: out, at: index[i] };
 }

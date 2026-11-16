@@ -173,7 +173,9 @@ test('389 AK5 a hyphen before a branch heading and a further path without headin
   // The count follows from the headings at the indentation of the branch line; without, two paths.
   const flat = read(['ES BEGINNT: [x] bei [@A].', 'WENN [?Betrag]', '→ klein:', 'ENDE: [a].', '→ mittel:', 'ENDE: [b].', 'SONST → groß:', 'ENDE: [c].'].join('\n'));
   assert.equal(flat.errors.length, 1);
-  assert.match(flat.errors[0], /^Zeile 5: /);
+  // Job 449: a path heading has no number, the message stands alone; the marker is on line 5.
+  assert.match(flat.errors[0], /^„→ mittel:“/);
+  assert.equal(flat.line, 5);
 });
 
 test('389 AK6 the stored format keeps further paths and branches', async () => {

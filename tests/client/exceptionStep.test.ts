@@ -95,8 +95,8 @@ test('405 risk: an exception where the step keeps running, and a step first on a
 
 test('405 AK6 an exception without a step before it: one plain message, no "already ended"', () => {
 	const moves: Move[] = [start, exc('Fehler'), end('Abbruch'), end('Fertig')];
-	assert.deepEqual(tell(moves, 'de').errors, ['Vor „FALLS Fehler“ steht kein Schritt, an dem die Ausnahme hängen kann']);
-	assert.deepEqual(tell(moves, 'en').errors, ['There is no step right before “IN CASE OF Fehler” for the exception to attach to']);
+	assert.deepEqual(tell(moves, 'de').errors, ['Vor „AUSNAHME Fehler“ steht kein Schritt, an dem die Ausnahme hängen kann']);
+	assert.deepEqual(tell(moves, 'en').errors, ['There is no step right before “EXCEPTION Fehler” for the exception to attach to']);
 	// Without an earlier error a move after the end still says so.
 	assert.deepEqual(tell([start, end('Fertig'), task('Noch')], 'de').errors, ['Die Geschichte ist schon zu Ende']);
 	assert.deepEqual(tell([start, end('Fertig'), task('Noch')], 'en').errors, ['The story has already ended']);
